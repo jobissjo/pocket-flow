@@ -1,15 +1,43 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import { useColorScheme } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { initializeDatabase } from '@/services/db';
+import { CustomThemeProvider, useTheme } from '@/services/theme-context';
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+function InnerLayout() {
+  const { isDark } = useTheme();
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
+    <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
       <AppTabs />
     </ThemeProvider>
+  );
+}
+
+export default function TabLayout() {
+  const [dbReady, setDbReady] = useState(false);
+
+  useEffect(() => {
+    initializeDatabase()
+      .then(() => setDbReady(true))
+      .catch((err) => {
+        console.error('DB Init Error:', err);
+        setDbReady(true);
+      });
+  }, []); // only run once on mount
+
+  if (!dbReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0A0A0A', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#ffffff" />
+      </View>
+    );
+  }
+
+  return (
+    <CustomThemeProvider>
+      <InnerLayout />
+    </CustomThemeProvider>
   );
 }
