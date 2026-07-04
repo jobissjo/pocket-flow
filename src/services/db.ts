@@ -43,6 +43,18 @@ export interface DebtLoan {
   created_at: string;
 }
 
+export interface Subscription {
+  id: string;
+  name: string;
+  amount: number;
+  category: string;
+  billing_cycle: 'weekly' | 'monthly' | 'yearly';
+  next_billing_date: string; // YYYY-MM-DD
+  account_id: string;
+  status: 'active' | 'paused';
+  created_at: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -54,11 +66,18 @@ export interface ChatMessage {
 
 const DATABASE_NAME = 'wealthflow.db';
 let dbInstance: SQLite.SQLiteDatabase | null = null;
+let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (dbInstance) return dbInstance;
-  dbInstance = await SQLite.openDatabaseAsync(DATABASE_NAME);
-  return dbInstance;
+  if (dbPromise) return dbPromise;
+
+  dbPromise = SQLite.openDatabaseAsync(DATABASE_NAME).then((db) => {
+    dbInstance = db;
+    return db;
+  });
+
+  return dbPromise;
 }
 
 export async function initializeDatabase(): Promise<void> {
@@ -119,6 +138,18 @@ export async function initializeDatabase(): Promise<void> {
       description TEXT,
       due_date TEXT,
       status TEXT CHECK(status IN ('pending', 'settled')) NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      category TEXT NOT NULL,
+      billing_cycle TEXT CHECK(billing_cycle IN ('weekly', 'monthly', 'yearly')) NOT NULL DEFAULT 'monthly',
+      next_billing_date TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      status TEXT CHECK(status IN ('active', 'paused')) NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL
     );
   `);
@@ -223,6 +254,7 @@ export async function clearAllData(): Promise<void> {
     await db.execAsync('DELETE FROM ai_chat_history;');
     await db.execAsync('DELETE FROM settings;');
     await db.execAsync('DELETE FROM debts_loans;');
+    await db.execAsync('DELETE FROM subscriptions;');
     
     // Enable foreign keys back
     await db.execAsync('PRAGMA foreign_keys = ON;');
@@ -255,6 +287,7 @@ export async function exportDatabaseToJson(): Promise<void> {
     const aiChatHistory = await db.getAllAsync<any>('SELECT * FROM ai_chat_history');
     const settings = await db.getAllAsync<any>('SELECT * FROM settings');
     const debtsLoans = await db.getAllAsync<any>('SELECT * FROM debts_loans');
+    const subscriptions = await db.getAllAsync<any>('SELECT * FROM subscriptions');
 
     const backupData = {
       version: 1,
@@ -265,7 +298,8 @@ export async function exportDatabaseToJson(): Promise<void> {
         savings_goals: savingsGoals,
         ai_chat_history: aiChatHistory,
         settings,
-        debts_loans: debtsLoans
+        debts_loans: debtsLoans,
+        subscriptions
       }
     };
 
@@ -349,7 +383,7 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       throw new Error('Invalid backup file format: missing data.');
     }
 
-    const { accounts, transactions, savings_goals, ai_chat_history, settings, debts_loans } = backup.data;
+    const { accounts, transactions, savings_goals, ai_chat_history, settings, debts_loans, subscriptions } = backup.data;
 
     if (!Array.isArray(accounts) || !Array.isArray(transactions)) {
       throw new Error('Invalid backup data: accounts and transactions must be list arrays.');
@@ -366,6 +400,7 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       await db.execAsync('DELETE FROM ai_chat_history;');
       await db.execAsync('DELETE FROM settings;');
       await db.execAsync('DELETE FROM debts_loans;');
+      await db.execAsync('DELETE FROM subscriptions;');
 
       for (const acc of accounts) {
         await db.runAsync(
@@ -455,6 +490,25 @@ export async function importDatabaseFromJson(): Promise<boolean> {
         }
       }
 
+      if (Array.isArray(subscriptions)) {
+        for (const s of subscriptions) {
+          await db.runAsync(
+            'INSERT INTO subscriptions (id, name, amount, category, billing_cycle, next_billing_date, account_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              s.id,
+              s.name,
+              s.amount,
+              s.category || 'Utilities',
+              s.billing_cycle || 'monthly',
+              s.next_billing_date,
+              s.account_id,
+              s.status || 'active',
+              s.created_at
+            ]
+          );
+        }
+      }
+
       await db.execAsync('PRAGMA foreign_keys = ON;');
     });
 
@@ -513,6 +567,117 @@ export async function deleteDebtLoan(id: string): Promise<void> {
   } catch (error) {
     console.error('Error deleting debt/loan:', error);
     throw error;
+  }
+}
+
+export async function getSubscriptions(): Promise<Subscription[]> {
+  try {
+    const db = await getDatabase();
+    return await db.getAllAsync<Subscription>('SELECT * FROM subscriptions ORDER BY next_billing_date ASC');
+  } catch (error) {
+    console.error('Error getting subscriptions:', error);
+    return [];
+  }
+}
+
+export async function addSubscription(
+  name: string,
+  amount: number,
+  category: string,
+  billingCycle: 'weekly' | 'monthly' | 'yearly',
+  nextBillingDate: string,
+  accountId: string
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const id = 'sub-' + Date.now();
+    const createdAt = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO subscriptions (id, name, amount, category, billing_cycle, next_billing_date, account_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?);`,
+      [id, name, amount, category, billingCycle, nextBillingDate, accountId, createdAt]
+    );
+  } catch (error) {
+    console.error('Error adding subscription:', error);
+    throw error;
+  }
+}
+
+export async function pauseSubscription(id: string, status: 'active' | 'paused'): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync('UPDATE subscriptions SET status = ? WHERE id = ?;', [status, id]);
+  } catch (error) {
+    console.error('Error changing subscription status:', error);
+    throw error;
+  }
+}
+
+export async function deleteSubscription(id: string): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync('DELETE FROM subscriptions WHERE id = ?;', [id]);
+  } catch (error) {
+    console.error('Error deleting subscription:', error);
+    throw error;
+  }
+}
+
+export async function autoApplySubscriptions(): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Query active subscriptions past due
+    const dueSubs = await db.getAllAsync<Subscription>(
+      "SELECT * FROM subscriptions WHERE status = 'active' AND next_billing_date <= ?",
+      [todayStr]
+    );
+
+    if (dueSubs.length === 0) return;
+
+    await db.withTransactionAsync(async () => {
+      for (const sub of dueSubs) {
+        let nextDate = new Date(sub.next_billing_date);
+        const today = new Date(todayStr);
+
+        while (nextDate <= today) {
+          const txId = 'tx-sub-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+          const txDateStr = nextDate.toISOString();
+
+          // 1. Insert transaction
+          await db.runAsync(
+            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+             VALUES (?, ?, ?, ?, ?, 'expense', ?, 1);`,
+            [txId, sub.account_id, -sub.amount, sub.category, `Subscription: ${sub.name}`, txDateStr]
+          );
+
+          // 2. Update account balance
+          await db.runAsync(
+            'UPDATE accounts SET balance = balance - ? WHERE id = ?;',
+            [sub.amount, sub.account_id]
+          );
+
+          // 3. Advance billing date
+          if (sub.billing_cycle === 'weekly') {
+            nextDate.setDate(nextDate.getDate() + 7);
+          } else if (sub.billing_cycle === 'yearly') {
+            nextDate.setFullYear(nextDate.getFullYear() + 1);
+          } else {
+            nextDate.setMonth(nextDate.getMonth() + 1);
+          }
+        }
+
+        // 4. Update the subscription in DB
+        const nextDateStr = nextDate.toISOString().split('T')[0];
+        await db.runAsync(
+          'UPDATE subscriptions SET next_billing_date = ? WHERE id = ?;',
+          [nextDateStr, sub.id]
+        );
+      }
+    });
+  } catch (error) {
+    console.error('Error auto-applying subscriptions:', error);
   }
 }
 

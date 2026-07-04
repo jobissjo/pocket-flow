@@ -22,6 +22,7 @@ import { useTheme } from '@/services/theme-context';
 import { getCurrencySymbol } from '@/services/currency';
 import { useSecurity } from '@/services/security-context';
 import ReportModal from '@/components/report-modal';
+import SubscriptionsModal from '@/components/subscriptions-modal';
 
 const { width } = Dimensions.get('window');
 
@@ -44,6 +45,7 @@ export default function ProfileScreen() {
   const [manageAccountsVisible, setManageAccountsVisible] = useState(false);
   const [accountFormVisible, setAccountFormVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
+  const [subsVisible, setSubsVisible] = useState(false);
 
   // Profile Edit fields
   const [editName, setEditName] = useState('');
@@ -428,6 +430,14 @@ export default function ProfileScreen() {
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setSubsVisible(true)}>
+            <View style={styles.listLeft}>
+              <MaterialIcons name="card-membership" size={22} color="#8e9192" style={{ marginRight: 14 }} />
+              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Recurring Bills & Subscriptions</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleExportData}>
             <View style={styles.listLeft}>
               <MaterialIcons name="file-download" size={22} color="#8e9192" style={{ marginRight: 14 }} />
@@ -683,6 +693,7 @@ export default function ProfileScreen() {
       </Modal>
 
       <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} />
+      <SubscriptionsModal visible={subsVisible} onClose={() => setSubsVisible(false)} />
 
     </SafeAreaView>
   );

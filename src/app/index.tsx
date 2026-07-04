@@ -14,10 +14,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Account, Transaction, getSetting } from '@/services/db';
+import { getDatabase, Account, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import AIAssistantModal from '@/components/ai-assistant-modal';
 import WalletDetailsModal from '@/components/wallet-details-modal';
+import SubscriptionsModal from '@/components/subscriptions-modal';
 
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
@@ -43,9 +44,14 @@ export default function HomeDashboard() {
   const [assistantVisible, setAssistantVisible] = useState(false);
   const [walletDetailsVisible, setWalletDetailsVisible] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [subsVisible, setSubsVisible] = useState(false);
+  const [upcomingBills, setUpcomingBills] = useState<Subscription[]>([]);
 
   const loadData = async () => {
     try {
+      // First auto-apply past-due recurring bills
+      await autoApplySubscriptions();
+
       const db = await getDatabase();
 
       // Load username setting
@@ -96,6 +102,20 @@ export default function HomeDashboard() {
         };
       });
       setBudgets(budgetList);
+
+      // 5. Fetch upcoming bills (next 30 days)
+      const allSubs = await getSubscriptions();
+      const todayStr = new Date().toISOString().split('T')[0];
+      const maxDate = new Date();
+      maxDate.setDate(maxDate.getDate() + 30);
+      const maxDateStr = maxDate.toISOString().split('T')[0];
+
+      const upcoming = allSubs.filter(s => 
+        s.status === 'active' && 
+        s.next_billing_date >= todayStr && 
+        s.next_billing_date <= maxDateStr
+      );
+      setUpcomingBills(upcoming);
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -324,6 +344,53 @@ export default function HomeDashboard() {
           )}
         </View>
 
+        {/* Upcoming Bills Widget */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Upcoming Bills</Text>
+          <TouchableOpacity onPress={() => setSubsVisible(true)}>
+            <Text style={styles.sectionLink}>Manage</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.glassCard, !isDark && styles.glassCardLight, { paddingBottom: 8, marginBottom: 20 }]}>
+          {upcomingBills.length === 0 ? (
+            <Text style={[styles.emptyText, { paddingVertical: 12 }]}>No bills due in the next 30 days.</Text>
+          ) : (
+            upcomingBills.slice(0, 3).map((item) => {
+              const formattedDate = new Date(item.next_billing_date).toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric'
+              });
+              
+              let iconName = 'card-membership';
+              if (item.category.toLowerCase().includes('entertainment')) iconName = 'tv';
+              else if (item.category.toLowerCase().includes('utilities')) iconName = 'power';
+              else if (item.category.toLowerCase().includes('rent') || item.category.toLowerCase().includes('home')) iconName = 'home';
+              else if (item.category.toLowerCase().includes('gym')) iconName = 'fitness-center';
+              else if (item.category.toLowerCase().includes('insurance')) iconName = 'shield';
+
+              return (
+                <View key={item.id} style={styles.txRow}>
+                  <View style={styles.txLeft}>
+                    <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
+                      <MaterialIcons name={iconName as any} size={20} color={isDark ? '#a6c8ff' : '#208aef'} />
+                    </View>
+                    <View>
+                      <Text style={[styles.txTitle, !isDark && styles.textLight]}>{item.name}</Text>
+                      <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
+                        Due: {formattedDate}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.txAmount, { color: '#ffb4ab', fontWeight: 'bold' }]}>
+                    -{formatAmount(item.amount)}
+                  </Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+
         {/* Extra spacing bottom to clear the tab bar */}
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -337,6 +404,14 @@ export default function HomeDashboard() {
         initialType={addTxType} 
         onSaveSuccess={loadData} 
         editingTransaction={editingTx}
+      />
+
+      <SubscriptionsModal 
+        visible={subsVisible} 
+        onClose={() => {
+          setSubsVisible(false);
+          loadData();
+        }} 
       />
 
       <AIAssistantModal 
