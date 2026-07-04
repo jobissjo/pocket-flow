@@ -21,6 +21,7 @@ import { getCurrencySymbol } from '@/services/currency';
 import { useSecurity } from '@/services/security-context';
 import ReportModal from '@/components/report-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
+import InvestmentsModal from '@/components/investments-modal';
 
 
 
@@ -44,6 +45,7 @@ export default function ProfileScreen() {
   const [accountFormVisible, setAccountFormVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [subsVisible, setSubsVisible] = useState(false);
+  const [investmentsVisible, setInvestmentsVisible] = useState(false);
 
   // Profile Edit fields
   const [editName, setEditName] = useState('');
@@ -437,6 +439,14 @@ export default function ProfileScreen() {
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setInvestmentsVisible(true)}>
+            <View style={styles.listLeft}>
+              <MaterialIcons name="donut-large" size={22} color="#8e9192" style={{ marginRight: 14 }} />
+              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Investments & SIP Tracker</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleExportData}>
             <View style={styles.listLeft}>
               <MaterialIcons name="file-download" size={22} color="#8e9192" style={{ marginRight: 14 }} />
@@ -693,6 +703,7 @@ export default function ProfileScreen() {
 
       <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} />
       <SubscriptionsModal visible={subsVisible} onClose={() => setSubsVisible(false)} />
+      <InvestmentsModal visible={investmentsVisible} onClose={() => setInvestmentsVisible(false)} />
 
     </SafeAreaView>
   );

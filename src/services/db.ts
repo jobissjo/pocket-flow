@@ -55,6 +55,29 @@ export interface Subscription {
   created_at: string;
 }
 
+export interface Investment {
+  id: string;
+  name: string;
+  type: 'mutual_fund' | 'stock' | 'crypto' | 'gold' | 'other';
+  shares: number;
+  buy_price: number;
+  current_price: number;
+  account_id: string;
+  created_at: string;
+}
+
+export interface SIP {
+  id: string;
+  name: string;
+  investment_id: string;
+  amount: number;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  next_date: string; // YYYY-MM-DD
+  account_id: string;
+  status: 'active' | 'paused';
+  created_at: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -149,6 +172,29 @@ export async function initializeDatabase(): Promise<void> {
       billing_cycle TEXT CHECK(billing_cycle IN ('weekly', 'monthly', 'yearly')) NOT NULL DEFAULT 'monthly',
       next_billing_date TEXT NOT NULL,
       account_id TEXT NOT NULL,
+      status TEXT CHECK(status IN ('active', 'paused')) NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS investments (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT CHECK(type IN ('mutual_fund', 'stock', 'crypto', 'gold', 'other')) NOT NULL,
+      shares REAL NOT NULL DEFAULT 0,
+      buy_price REAL NOT NULL,
+      current_price REAL NOT NULL,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sips (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      investment_id TEXT NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
+      amount REAL NOT NULL,
+      frequency TEXT CHECK(frequency IN ('weekly', 'monthly', 'yearly')) NOT NULL DEFAULT 'monthly',
+      next_date TEXT NOT NULL,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
       status TEXT CHECK(status IN ('active', 'paused')) NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL
     );
@@ -255,6 +301,8 @@ export async function clearAllData(): Promise<void> {
     await db.execAsync('DELETE FROM settings;');
     await db.execAsync('DELETE FROM debts_loans;');
     await db.execAsync('DELETE FROM subscriptions;');
+    await db.execAsync('DELETE FROM investments;');
+    await db.execAsync('DELETE FROM sips;');
     
     // Enable foreign keys back
     await db.execAsync('PRAGMA foreign_keys = ON;');
@@ -288,6 +336,8 @@ export async function exportDatabaseToJson(): Promise<void> {
     const settings = await db.getAllAsync<any>('SELECT * FROM settings');
     const debtsLoans = await db.getAllAsync<any>('SELECT * FROM debts_loans');
     const subscriptions = await db.getAllAsync<any>('SELECT * FROM subscriptions');
+    const investments = await db.getAllAsync<any>('SELECT * FROM investments');
+    const sips = await db.getAllAsync<any>('SELECT * FROM sips');
 
     const backupData = {
       version: 1,
@@ -299,7 +349,9 @@ export async function exportDatabaseToJson(): Promise<void> {
         ai_chat_history: aiChatHistory,
         settings,
         debts_loans: debtsLoans,
-        subscriptions
+        subscriptions,
+        investments,
+        sips
       }
     };
 
@@ -383,7 +435,7 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       throw new Error('Invalid backup file format: missing data.');
     }
 
-    const { accounts, transactions, savings_goals, ai_chat_history, settings, debts_loans, subscriptions } = backup.data;
+    const { accounts, transactions, savings_goals, ai_chat_history, settings, debts_loans, subscriptions, investments, sips } = backup.data;
 
     if (!Array.isArray(accounts) || !Array.isArray(transactions)) {
       throw new Error('Invalid backup data: accounts and transactions must be list arrays.');
@@ -401,6 +453,8 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       await db.execAsync('DELETE FROM settings;');
       await db.execAsync('DELETE FROM debts_loans;');
       await db.execAsync('DELETE FROM subscriptions;');
+      await db.execAsync('DELETE FROM investments;');
+      await db.execAsync('DELETE FROM sips;');
 
       for (const acc of accounts) {
         await db.runAsync(
@@ -501,6 +555,43 @@ export async function importDatabaseFromJson(): Promise<boolean> {
               s.category || 'Utilities',
               s.billing_cycle || 'monthly',
               s.next_billing_date,
+              s.account_id,
+              s.status || 'active',
+              s.created_at
+            ]
+          );
+        }
+      }
+
+      if (Array.isArray(investments)) {
+        for (const inv of investments) {
+          await db.runAsync(
+            'INSERT INTO investments (id, name, type, shares, buy_price, current_price, account_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              inv.id,
+              inv.name,
+              inv.type,
+              inv.shares ?? 0,
+              inv.buy_price ?? 0,
+              inv.current_price ?? 0,
+              inv.account_id,
+              inv.created_at
+            ]
+          );
+        }
+      }
+
+      if (Array.isArray(sips)) {
+        for (const s of sips) {
+          await db.runAsync(
+            'INSERT INTO sips (id, name, investment_id, amount, frequency, next_date, account_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              s.id,
+              s.name,
+              s.investment_id,
+              s.amount,
+              s.frequency || 'monthly',
+              s.next_date,
               s.account_id,
               s.status || 'active',
               s.created_at
@@ -678,6 +769,281 @@ export async function autoApplySubscriptions(): Promise<void> {
     });
   } catch (error) {
     console.error('Error auto-applying subscriptions:', error);
+  }
+}
+
+export async function getInvestments(): Promise<Investment[]> {
+  try {
+    const db = await getDatabase();
+    return await db.getAllAsync<Investment>('SELECT * FROM investments ORDER BY name ASC');
+  } catch (error) {
+    console.error('Error getting investments:', error);
+    return [];
+  }
+}
+
+export async function addInvestment(
+  name: string,
+  type: 'mutual_fund' | 'stock' | 'crypto' | 'gold' | 'other',
+  shares: number,
+  buyPrice: number,
+  currentPrice: number,
+  accountId: string
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const id = 'inv-' + Date.now();
+    const createdAt = new Date().toISOString();
+
+    await db.withTransactionAsync(async () => {
+      // 1. Insert investment
+      await db.runAsync(
+        `INSERT INTO investments (id, name, type, shares, buy_price, current_price, account_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        [id, name, type, shares, buyPrice, currentPrice, accountId, createdAt]
+      );
+
+      // 2. Add transaction representing purchase if shares > 0
+      if (shares > 0) {
+        const txId = 'tx-inv-' + Date.now();
+        const cost = shares * buyPrice;
+        await db.runAsync(
+          `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+           VALUES (?, ?, ?, 'Investment', ?, 'expense', ?, 0);`,
+          [txId, accountId, -cost, `Bought ${shares} shares of ${name}`, createdAt]
+        );
+        // 3. Update account balance
+        await db.runAsync(
+          'UPDATE accounts SET balance = balance - ? WHERE id = ?;',
+          [cost, accountId]
+        );
+      }
+    });
+  } catch (error) {
+    console.error('Error adding investment:', error);
+    throw error;
+  }
+}
+
+export async function updateInvestmentPrice(id: string, currentPrice: number): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync('UPDATE investments SET current_price = ? WHERE id = ?;', [currentPrice, id]);
+  } catch (error) {
+    console.error('Error updating current price:', error);
+    throw error;
+  }
+}
+
+export async function buyMoreInvestment(
+  id: string,
+  sharesToAdd: number,
+  buyPrice: number,
+  accountId: string
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const inv = await db.getFirstAsync<Investment>('SELECT * FROM investments WHERE id = ?;', [id]);
+    if (!inv) throw new Error('Investment not found');
+
+    const totalShares = inv.shares + sharesToAdd;
+    // Calculate new average buy price
+    const newAverageBuyPrice = ((inv.shares * inv.buy_price) + (sharesToAdd * buyPrice)) / totalShares;
+    const cost = sharesToAdd * buyPrice;
+    const txId = 'tx-inv-buy-' + Date.now();
+    const dateStr = new Date().toISOString();
+
+    await db.withTransactionAsync(async () => {
+      // 1. Update investment shares & buy price
+      await db.runAsync(
+        'UPDATE investments SET shares = ?, buy_price = ? WHERE id = ?;',
+        [totalShares, newAverageBuyPrice, id]
+      );
+      // 2. Add expense transaction
+      await db.runAsync(
+        `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+         VALUES (?, ?, ?, 'Investment', ?, 'expense', ?, 0);`,
+        [txId, accountId, -cost, `Bought ${sharesToAdd} shares of ${inv.name}`, dateStr]
+      );
+      // 3. Deduct balance from account
+      await db.runAsync(
+        'UPDATE accounts SET balance = balance - ? WHERE id = ?;',
+        [cost, accountId]
+      );
+    });
+  } catch (error) {
+    console.error('Error buying more investment:', error);
+    throw error;
+  }
+}
+
+export async function sellInvestment(
+  id: string,
+  sharesToSell: number,
+  sellPrice: number,
+  accountId: string
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const inv = await db.getFirstAsync<Investment>('SELECT * FROM investments WHERE id = ?;', [id]);
+    if (!inv) throw new Error('Investment not found');
+    if (inv.shares < sharesToSell) throw new Error('Insufficient shares to sell');
+
+    const remainingShares = inv.shares - sharesToSell;
+    const gain = sharesToSell * sellPrice;
+    const txId = 'tx-inv-sell-' + Date.now();
+    const dateStr = new Date().toISOString();
+
+    await db.withTransactionAsync(async () => {
+      // 1. Update shares
+      await db.runAsync('UPDATE investments SET shares = ? WHERE id = ?;', [remainingShares, id]);
+      // 2. Add income transaction
+      await db.runAsync(
+        `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+         VALUES (?, ?, ?, 'Investment', ?, 'income', ?, 0);`,
+        [txId, accountId, gain, `Sold ${sharesToSell} shares of ${inv.name}`, dateStr]
+      );
+      // 3. Add proceeds to account balance
+      await db.runAsync(
+        'UPDATE accounts SET balance = balance + ? WHERE id = ?;',
+        [gain, accountId]
+      );
+    });
+  } catch (error) {
+    console.error('Error selling investment:', error);
+    throw error;
+  }
+}
+
+export async function getSIPs(): Promise<SIP[]> {
+  try {
+    const db = await getDatabase();
+    return await db.getAllAsync<SIP>('SELECT * FROM sips ORDER BY next_date ASC');
+  } catch (error) {
+    console.error('Error getting sips:', error);
+    return [];
+  }
+}
+
+export async function addSIP(
+  name: string,
+  investmentId: string,
+  amount: number,
+  frequency: 'weekly' | 'monthly' | 'yearly',
+  nextDate: string,
+  accountId: string
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const id = 'sip-' + Date.now();
+    const createdAt = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO sips (id, name, investment_id, amount, frequency, next_date, account_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?);`,
+      [id, name, investmentId, amount, frequency, nextDate, accountId, createdAt]
+    );
+  } catch (error) {
+    console.error('Error adding SIP:', error);
+    throw error;
+  }
+}
+
+export async function pauseSIP(id: string, status: 'active' | 'paused'): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync('UPDATE sips SET status = ? WHERE id = ?;', [status, id]);
+  } catch (error) {
+    console.error('Error pausing/resuming SIP:', error);
+    throw error;
+  }
+}
+
+export async function deleteSIP(id: string): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync('DELETE FROM sips WHERE id = ?;', [id]);
+  } catch (error) {
+    console.error('Error deleting SIP:', error);
+    throw error;
+  }
+}
+
+export async function autoApplySIPs(): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Query active SIPs past due
+    const dueSIPs = await db.getAllAsync<SIP>(
+      "SELECT * FROM sips WHERE status = 'active' AND next_date <= ?",
+      [todayStr]
+    );
+
+    if (dueSIPs.length === 0) return;
+
+    await db.withTransactionAsync(async () => {
+      for (const sip of dueSIPs) {
+        // Load target investment details
+        const inv = await db.getFirstAsync<Investment>(
+          'SELECT * FROM investments WHERE id = ?;',
+          [sip.investment_id]
+        );
+
+        if (!inv) continue; // if investment was deleted somehow, skip
+
+        let nextDate = new Date(sip.next_date);
+        const today = new Date(todayStr);
+
+        while (nextDate <= today) {
+          const txId = 'tx-sip-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+          const txDateStr = nextDate.toISOString();
+          const sharesBought = sip.amount / inv.current_price;
+
+          // 1. Insert transaction
+          await db.runAsync(
+            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+             VALUES (?, ?, ?, 'Investment', ?, 'expense', ?, 1);`,
+            [txId, sip.account_id, -sip.amount, `SIP: ${sip.name} (${sharesBought.toFixed(4)} shares)`, txDateStr]
+          );
+
+          // 2. Update account balance
+          await db.runAsync(
+            'UPDATE accounts SET balance = balance - ? WHERE id = ?;',
+            [sip.amount, sip.account_id]
+          );
+
+          // 3. Update investment shares (average buy price remains weighted)
+          const newShares = inv.shares + sharesBought;
+          const newAvgBuyPrice = ((inv.shares * inv.buy_price) + (sharesBought * inv.current_price)) / newShares;
+          await db.runAsync(
+            'UPDATE investments SET shares = ?, buy_price = ? WHERE id = ?;',
+            [newShares, newAvgBuyPrice, inv.id]
+          );
+
+          // 4. Advance billing date
+          if (sip.frequency === 'weekly') {
+            nextDate.setDate(nextDate.getDate() + 7);
+          } else if (sip.frequency === 'yearly') {
+            nextDate.setFullYear(nextDate.getFullYear() + 1);
+          } else {
+            nextDate.setMonth(nextDate.getMonth() + 1);
+          }
+
+          // Sync in-memory representation for potential multi-cycle runs
+          inv.shares = newShares;
+          inv.buy_price = newAvgBuyPrice;
+        }
+
+        // 5. Update next date in database
+        const nextDateStr = nextDate.toISOString().split('T')[0];
+        await db.runAsync(
+          'UPDATE sips SET next_date = ? WHERE id = ?;',
+          [nextDateStr, sip.id]
+        );
+      }
+    });
+  } catch (error) {
+    console.error('Error auto-applying SIPs:', error);
   }
 }
 

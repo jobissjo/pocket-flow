@@ -14,11 +14,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription } from '@/services/db';
+import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import AIAssistantModal from '@/components/ai-assistant-modal';
 import WalletDetailsModal from '@/components/wallet-details-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
+import InvestmentsModal from '@/components/investments-modal';
 
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
@@ -37,6 +38,7 @@ export default function HomeDashboard() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<{ category: string; spent: number; limit: number }[]>([]);
   const [username, setUsername] = useState('Alex');
+  const [portfolioVal, setPortfolioVal] = useState(0);
 
   // Modal Visibility States
   const [addTxVisible, setAddTxVisible] = useState(false);
@@ -46,11 +48,13 @@ export default function HomeDashboard() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [subsVisible, setSubsVisible] = useState(false);
   const [upcomingBills, setUpcomingBills] = useState<Subscription[]>([]);
+  const [investmentsVisible, setInvestmentsVisible] = useState(false);
 
   const loadData = async () => {
     try {
-      // First auto-apply past-due recurring bills
+      // First auto-apply past-due recurring bills & SIPs
       await autoApplySubscriptions();
+      await autoApplySIPs();
 
       const db = await getDatabase();
 
@@ -117,6 +121,11 @@ export default function HomeDashboard() {
       );
       setUpcomingBills(upcoming);
 
+      // Load investment portfolio valuation
+      const invs = await getInvestments();
+      const val = invs.reduce((sum, inv) => sum + (inv.shares * inv.current_price), 0);
+      setPortfolioVal(val);
+
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -157,6 +166,25 @@ export default function HomeDashboard() {
             <MaterialIcons name="auto-awesome" size={24} color="#a6c8ff" />
           </TouchableOpacity>
         </View>
+
+        {/* Investment Portfolio Summary Card */}
+        <TouchableOpacity 
+          style={[styles.investmentCard, !isDark && styles.investmentCardLight]}
+          onPress={() => setInvestmentsVisible(true)}
+        >
+          <View style={styles.investmentHeader}>
+            <View style={styles.investmentIconContainer}>
+              <MaterialIcons name="donut-large" size={20} color={isDark ? "#a6c8ff" : "#208aef"} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.investmentLabel}>Investment Portfolio</Text>
+              <Text style={[styles.investmentVal, !isDark && styles.textLight]}>
+                {formatAmount(portfolioVal)}
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+          </View>
+        </TouchableOpacity>
 
         {/* Balance Card */}
         <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
@@ -423,6 +451,14 @@ export default function HomeDashboard() {
       <WalletDetailsModal 
         visible={walletDetailsVisible} 
         onClose={() => setWalletDetailsVisible(false)} 
+      />
+
+      <InvestmentsModal 
+        visible={investmentsVisible} 
+        onClose={() => {
+          setInvestmentsVisible(false);
+          loadData();
+        }} 
       />
     </SafeAreaView>
   );
@@ -711,5 +747,47 @@ const styles = StyleSheet.create({
     color: '#8e9192',
     textAlign: 'center',
     paddingVertical: 20,
+  },
+  investmentCard: {
+    backgroundColor: 'rgba(28, 28, 30, 0.4)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    padding: 16,
+    marginBottom: 16,
+  },
+  investmentCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(0,0,0,0.05)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  investmentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  investmentIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(166, 200, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  investmentLabel: {
+    fontSize: 10,
+    color: '#8e9192',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  investmentVal: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginTop: 2,
   }
 });
