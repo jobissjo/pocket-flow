@@ -1,4 +1,8 @@
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 export interface Account {
   id: string;
@@ -218,3 +222,205 @@ export async function clearAllData(): Promise<void> {
     throw error;
   }
 }
+
+export async function exportDatabaseToJson(): Promise<void> {
+  try {
+    const db = await getDatabase();
+    
+    // Fetch all tables
+    const accounts = await db.getAllAsync<any>('SELECT * FROM accounts');
+    const transactions = await db.getAllAsync<any>('SELECT * FROM transactions');
+    const savingsGoals = await db.getAllAsync<any>('SELECT * FROM savings_goals');
+    const aiChatHistory = await db.getAllAsync<any>('SELECT * FROM ai_chat_history');
+    const settings = await db.getAllAsync<any>('SELECT * FROM settings');
+
+    const backupData = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        accounts,
+        transactions,
+        savings_goals: savingsGoals,
+        ai_chat_history: aiChatHistory,
+        settings
+      }
+    };
+
+    const jsonString = JSON.stringify(backupData, null, 2);
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `wealthflow_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const fileUri = `${FileSystem.cacheDirectory}wealthflow_backup.json`;
+      await FileSystem.writeAsStringAsync(fileUri, jsonString, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Export WealthFlow Backup'
+        });
+      } else {
+        throw new Error('Sharing is not available on this device');
+      }
+    }
+  } catch (error) {
+    console.error('Error exporting database:', error);
+    throw error;
+  }
+}
+
+export async function importDatabaseFromJson(): Promise<boolean> {
+  try {
+    let jsonString = '';
+
+    if (Platform.OS === 'web') {
+      jsonString = await new Promise<string>((resolve, reject) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e: any) => {
+          const file = e.target.files?.[0];
+          if (!file) {
+            reject(new Error('No file selected'));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            resolve(evt.target?.result as string);
+          };
+          reader.onerror = () => reject(new Error('Error reading file'));
+          reader.readAsText(file);
+        };
+        input.click();
+      });
+    } else {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/json', '*/*'],
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return false;
+      }
+
+      const fileUri = result.assets[0].uri;
+      jsonString = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+    }
+
+    if (!jsonString) {
+      throw new Error('Backup file is empty or could not be read.');
+    }
+
+    const backup = JSON.parse(jsonString);
+    if (!backup || typeof backup !== 'object' || !backup.data || typeof backup.data !== 'object') {
+      throw new Error('Invalid backup file format: missing data.');
+    }
+
+    const { accounts, transactions, savings_goals, ai_chat_history, settings } = backup.data;
+
+    if (!Array.isArray(accounts) || !Array.isArray(transactions)) {
+      throw new Error('Invalid backup data: accounts and transactions must be list arrays.');
+    }
+
+    const db = await getDatabase();
+
+    await db.withTransactionAsync(async () => {
+      await db.execAsync('PRAGMA foreign_keys = OFF;');
+
+      await db.execAsync('DELETE FROM transactions;');
+      await db.execAsync('DELETE FROM accounts;');
+      await db.execAsync('DELETE FROM savings_goals;');
+      await db.execAsync('DELETE FROM ai_chat_history;');
+      await db.execAsync('DELETE FROM settings;');
+
+      for (const acc of accounts) {
+        await db.runAsync(
+          'INSERT INTO accounts (id, name, type, balance, details, color) VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            acc.id,
+            acc.name,
+            acc.type,
+            acc.balance ?? 0,
+            acc.details || '',
+            acc.color || '#1e3a8a,#0f172a'
+          ]
+        );
+      }
+
+      for (const tx of transactions) {
+        await db.runAsync(
+          'INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            tx.id,
+            tx.account_id,
+            tx.amount,
+            tx.category,
+            tx.note || '',
+            tx.type,
+            tx.date,
+            tx.recurring ? 1 : 0
+          ]
+        );
+      }
+
+      if (Array.isArray(savings_goals)) {
+        for (const goal of savings_goals) {
+          await db.runAsync(
+            'INSERT INTO savings_goals (id, name, target_amount, current_amount, category, monthly_contribution) VALUES (?, ?, ?, ?, ?, ?)',
+            [
+              goal.id,
+              goal.name,
+              goal.target_amount,
+              goal.current_amount ?? 0,
+              goal.category || '',
+              goal.monthly_contribution ?? 0
+            ]
+          );
+        }
+      }
+
+      if (Array.isArray(ai_chat_history)) {
+        for (const chat of ai_chat_history) {
+          await db.runAsync(
+            'INSERT INTO ai_chat_history (id, role, content, timestamp, type, structured_data) VALUES (?, ?, ?, ?, ?, ?)',
+            [
+              chat.id,
+              chat.role,
+              chat.content,
+              chat.timestamp,
+              chat.type || 'text',
+              chat.structured_data || null
+            ]
+          );
+        }
+      }
+
+      if (Array.isArray(settings)) {
+        for (const setting of settings) {
+          await db.runAsync(
+            'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+            [setting.key, setting.value]
+          );
+        }
+      }
+
+      await db.execAsync('PRAGMA foreign_keys = ON;');
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error importing database:', error);
+    throw error;
+  }
+}
+

@@ -8,7 +8,10 @@
     "scheme": "pocketflow",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Allow PocketFlow to use Face ID for securing your local data vault."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +20,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.jobiss.pocketflow"
     },
     "web": {
       "output": "static",
@@ -35,11 +39,24 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-sharing",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow PocketFlow to use Face ID for securing your local data vault."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "59411b37-3f0b-4f66-b10e-7d7e5501549e"
+      }
     }
   }
 }

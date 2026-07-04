@@ -17,21 +17,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Account, getSetting, setSetting, clearAllData } from '@/services/db';
+import { getDatabase, Account, getSetting, setSetting, clearAllData, exportDatabaseToJson, importDatabaseFromJson } from '@/services/db';
 import { useTheme } from '@/services/theme-context';
 import { getCurrencySymbol } from '@/services/currency';
+import { useSecurity } from '@/services/security-context';
 
 const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
   const isFocused = useIsFocused();
   const { themeMode, setThemeMode, isDark } = useTheme();
+  const { biometricsEnabled, toggleBiometrics, lockVault, hasSecurity } = useSecurity();
 
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<Account[]>([]);
   
   // Settings state
-  const [biometricsEnabled, setBiometricsEnabled] = useState(true);
   const [currency, setCurrency] = useState('USD');
   const [username, setUsername] = useState('Alex');
   const [memberSince, setMemberSince] = useState('June 2026');
@@ -63,9 +64,7 @@ export default function ProfileScreen() {
       const rows = await db.getAllAsync<Account>('SELECT * FROM accounts');
       setAccounts(rows);
 
-      // Load settings
-      const bio = await getSetting('biometrics', 'true');
-      setBiometricsEnabled(bio === 'true');
+      // Load settings (biometrics is managed by SecurityContext)
 
       const curr = await getSetting('currency', 'USD');
       setCurrency(curr);
@@ -90,8 +89,17 @@ export default function ProfileScreen() {
   }, [isFocused]);
 
   const handleToggleBiometrics = async (val: boolean) => {
-    setBiometricsEnabled(val);
-    await setSetting('biometrics', val ? 'true' : 'false');
+    if (!hasSecurity && val) {
+      Alert.alert(
+        'Not Supported',
+        'Your device does not support biometric or passcode security, or it is not set up.'
+      );
+      return;
+    }
+    const success = await toggleBiometrics(val);
+    if (!success && !val) {
+      Alert.alert('Authentication Failed', 'Could not disable lock security.');
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -195,18 +203,53 @@ export default function ProfileScreen() {
   const handleExportData = () => {
     Alert.alert(
       'Export Data',
-      'All local data will be exported as a raw database backup. Do you want to proceed?',
+      'All local data will be exported as a JSON database backup. Do you want to proceed?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Export', onPress: () => Alert.alert('Success', 'Data exported to /downloads/wealthflow_backup.db') }
+        { 
+          text: 'Export', 
+          onPress: async () => {
+            try {
+              await exportDatabaseToJson();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to export backup.');
+            }
+          } 
+        }
+      ]
+    );
+  };
+
+  const handleImportData = () => {
+    Alert.alert(
+      'Import Data',
+      'Restoring a backup will overwrite all current app data. This action cannot be undone. Do you want to proceed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Restore Backup', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const success = await importDatabaseFromJson();
+              if (success) {
+                Alert.alert('Success', 'Data restored successfully from backup.', [
+                  { text: 'OK', onPress: () => loadProfileData() }
+                ]);
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to import backup. Please ensure the file is a valid WealthFlow backup.');
+            }
+          } 
+        }
       ]
     );
   };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Logging out will lock access to this local vault. Relaunch the app to sign in again.', [
+    Alert.alert('Lock Vault', 'Are you sure you want to lock the vault? You will need to authenticate to access it again.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: () => {} }
+      { text: 'Lock', style: 'destructive', onPress: () => lockVault() }
     ]);
   };
 
@@ -378,7 +421,15 @@ export default function ProfileScreen() {
           <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleExportData}>
             <View style={styles.listLeft}>
               <MaterialIcons name="file-download" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Export Data (Backup SQLite)</Text>
+              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Export Backup (JSON)</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleImportData}>
+            <View style={styles.listLeft}>
+              <MaterialIcons name="file-upload" size={22} color="#8e9192" style={{ marginRight: 14 }} />
+              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Import Backup (JSON)</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>

@@ -5,12 +5,18 @@ import { useEffect, useState } from 'react';
 import AppTabs from '@/components/app-tabs';
 import { initializeDatabase } from '@/services/db';
 import { CustomThemeProvider, useTheme } from '@/services/theme-context';
+import { SecurityProvider } from '@/services/security-context';
+import SecurityLock from '@/components/security-lock';
 
 function InnerLayout() {
   const { isDark } = useTheme();
   return (
     <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-      <AppTabs />
+      <SecurityProvider>
+        <SecurityLock>
+          <AppTabs />
+        </SecurityLock>
+      </SecurityProvider>
     </ThemeProvider>
   );
 }

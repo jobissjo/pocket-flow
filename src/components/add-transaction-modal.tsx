@@ -25,7 +25,7 @@ const { width } = Dimensions.get('window');
 interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
-  initialType: 'income' | 'expense';
+  initialType: 'income' | 'expense' | 'transfer';
   onSaveSuccess?: () => void;
   editingTransaction?: Transaction | null;
 }
@@ -35,9 +35,10 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState('');
-  const [type, setType] = useState<'income' | 'expense'>(initialType);
+  const [type, setType] = useState<'income' | 'expense' | 'transfer'>(initialType);
   const [selectedCategory, setSelectedCategory] = useState('Food');
   const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [targetAccount, setTargetAccount] = useState<string>('');
   const [recurring, setRecurring] = useState(false);
   const [note, setNote] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -61,6 +62,32 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
       setAccounts(rows);
       if (!editingTransaction && rows.length > 0) {
         setSelectedAccount(rows[0].id);
+        if (rows.length > 1) {
+          setTargetAccount(rows[1].id);
+        } else {
+          setTargetAccount(rows[0].id);
+        }
+      }
+
+      if (editingTransaction && editingTransaction.type === 'transfer') {
+        const linkedId = editingTransaction.id.endsWith('-out')
+          ? editingTransaction.id.replace('-out', '-in')
+          : editingTransaction.id.replace('-in', '-out');
+
+        const linkedTx = await db.getFirstAsync<Transaction>(
+          'SELECT * FROM transactions WHERE id = ?',
+          [linkedId]
+        );
+
+        if (linkedTx) {
+          if (editingTransaction.id.endsWith('-out')) {
+            setSelectedAccount(editingTransaction.account_id);
+            setTargetAccount(linkedTx.account_id);
+          } else {
+            setSelectedAccount(linkedTx.account_id);
+            setTargetAccount(editingTransaction.account_id);
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
@@ -72,7 +99,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
   useEffect(() => {
     if (visible) {
       if (editingTransaction) {
-        setType(editingTransaction.type === 'income' || editingTransaction.type === 'expense' ? editingTransaction.type : 'expense');
+        setType(editingTransaction.type);
         setAmount(Math.abs(editingTransaction.amount).toString());
         setNote(editingTransaction.note || '');
         setRecurring(editingTransaction.recurring === 1);
@@ -83,7 +110,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
         setAmount('');
         setNote('');
         setRecurring(false);
-        setSelectedCategory('Food');
+        setSelectedCategory(initialType === 'transfer' ? 'Transfer' : 'Food');
       }
       loadData();
     }
@@ -99,44 +126,103 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
       Alert.alert('Error', 'Please select an account.');
       return;
     }
+    if (type === 'transfer' && !targetAccount) {
+      Alert.alert('Error', 'Please select a destination account.');
+      return;
+    }
 
     try {
       const db = await getDatabase();
-      const finalAmount = type === 'expense' ? -numAmount : numAmount;
-
       await db.runAsync('BEGIN TRANSACTION;');
 
+      // 1. Revert and delete previous transaction(s) if editing
       if (editingTransaction) {
-        // 1. Revert original transaction's balance impact
+        if (editingTransaction.type === 'transfer') {
+          const linkedId = editingTransaction.id.endsWith('-out')
+            ? editingTransaction.id.replace('-out', '-in')
+            : editingTransaction.id.replace('-in', '-out');
+
+          const linkedTx = await db.getFirstAsync<Transaction>(
+            'SELECT * FROM transactions WHERE id = ?',
+            [linkedId]
+          );
+
+          // Revert source balance
+          await db.runAsync(
+            `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+            [editingTransaction.amount, editingTransaction.account_id]
+          );
+
+          // Revert target balance
+          if (linkedTx) {
+            await db.runAsync(
+              `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+              [linkedTx.amount, linkedTx.account_id]
+            );
+            await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [linkedId]);
+          }
+
+          await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+        } else {
+          // Revert standard balance
+          await db.runAsync(
+            `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+            [editingTransaction.amount, editingTransaction.account_id]
+          );
+          await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+        }
+      }
+
+      const dateStr = editingTransaction ? editingTransaction.date : new Date().toISOString();
+
+      // 2. Perform fresh insertion based on selected type
+      if (type === 'transfer') {
+        if (selectedAccount === targetAccount) {
+          Alert.alert('Error', 'Source and destination accounts must be different.');
+          await db.runAsync('ROLLBACK;');
+          return;
+        }
+
+        const txBaseId = 'tx-' + Date.now();
+        const fromAccount = accounts.find(a => a.id === selectedAccount);
+        const toAccount = accounts.find(a => a.id === targetAccount);
+        const fromName = fromAccount ? fromAccount.name : 'Source';
+        const toName = toAccount ? toAccount.name : 'Destination';
+
+        const customNote = note.trim() ? ` • ${note}` : '';
+        const noteOut = `Transfer to ${toName}${customNote}`;
+        const noteIn = `Transfer from ${fromName}${customNote}`;
+
+        // Insert outflow (-amount)
+        await db.runAsync(
+          `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+          [txBaseId + '-out', selectedAccount, -numAmount, 'Transfer', noteOut, 'transfer', dateStr, recurring ? 1 : 0]
+        );
         await db.runAsync(
           `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-          [editingTransaction.amount, editingTransaction.account_id]
+          [numAmount, selectedAccount]
         );
 
-        // 2. Update the transaction row
+        // Insert inflow (+amount)
         await db.runAsync(
-          `UPDATE transactions SET account_id = ?, amount = ?, category = ?, note = ?, type = ?, recurring = ?
-           WHERE id = ?;`,
-          [selectedAccount, finalAmount, selectedCategory, note, type, recurring ? 1 : 0, editingTransaction.id]
+          `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+          [txBaseId + '-in', targetAccount, numAmount, 'Transfer', noteIn, 'transfer', dateStr, recurring ? 1 : 0]
         );
-
-        // 3. Apply new transaction's balance impact
         await db.runAsync(
           `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
-          [finalAmount, selectedAccount]
+          [numAmount, targetAccount]
         );
       } else {
+        const finalAmount = type === 'expense' ? -numAmount : numAmount;
         const txId = 'tx-' + Date.now();
-        const dateStr = new Date().toISOString();
 
-        // 1. Insert transaction record
         await db.runAsync(
           `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
           [txId, selectedAccount, finalAmount, selectedCategory, note, type, dateStr, recurring ? 1 : 0]
         );
-
-        // 2. Update account balance
         await db.runAsync(
           `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
           [finalAmount, selectedAccount]
@@ -156,9 +242,14 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
   const handleDelete = async () => {
     if (!editingTransaction) return;
 
+    const isTransfer = editingTransaction.type === 'transfer';
+    const alertMessage = isTransfer
+      ? 'Are you sure you want to delete this transfer? This will restore balances on both accounts.'
+      : 'Are you sure you want to delete this transaction? This will restore the account balance.';
+
     Alert.alert(
-      'Delete Transaction',
-      'Are you sure you want to delete this transaction? This will restore the account balance.',
+      isTransfer ? 'Delete Transfer' : 'Delete Transaction',
+      alertMessage,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -169,17 +260,40 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
               const db = await getDatabase();
               await db.runAsync('BEGIN TRANSACTION;');
 
-              // 1. Revert balance impact
-              await db.runAsync(
-                `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-                [editingTransaction.amount, editingTransaction.account_id]
-              );
+              if (isTransfer) {
+                const linkedId = editingTransaction.id.endsWith('-out')
+                  ? editingTransaction.id.replace('-out', '-in')
+                  : editingTransaction.id.replace('-in', '-out');
 
-              // 2. Delete transaction row
-              await db.runAsync(
-                `DELETE FROM transactions WHERE id = ?;`,
-                [editingTransaction.id]
-              );
+                const linkedTx = await db.getFirstAsync<Transaction>(
+                  'SELECT * FROM transactions WHERE id = ?',
+                  [linkedId]
+                );
+
+                // Revert source balance
+                await db.runAsync(
+                  `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+                  [editingTransaction.amount, editingTransaction.account_id]
+                );
+
+                // Revert target balance
+                if (linkedTx) {
+                  await db.runAsync(
+                    `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+                    [linkedTx.amount, linkedTx.account_id]
+                  );
+                  await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [linkedId]);
+                }
+
+                await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+              } else {
+                // Revert standard balance
+                await db.runAsync(
+                  `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+                  [editingTransaction.amount, editingTransaction.account_id]
+                );
+                await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+              }
 
               await db.runAsync('COMMIT;');
 
@@ -238,7 +352,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
               {/* Form Panel */}
               <View style={[styles.formPanel, !isDark && styles.formPanelLight]}>
                 
-                {/* Type Selector (Income/Expense Segmented Toggle) */}
+                {/* Type Selector (Expense/Income/Transfer Segmented Toggle) */}
                 <View style={[styles.toggleContainer, !isDark && styles.toggleContainerLight]}>
                   <TouchableOpacity
                     style={[
@@ -268,46 +382,76 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
                       type === 'income' && !isDark && { color: '#ffffff' }
                     ]}>Income</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.toggleBtn, 
+                      type === 'transfer' && styles.activeIncomeBtn,
+                      type === 'transfer' && !isDark && { backgroundColor: '#0A0A0A' }
+                    ]}
+                    onPress={() => {
+                      setType('transfer');
+                      setSelectedCategory('Transfer');
+                    }}
+                  >
+                    <Text style={[
+                      styles.toggleText, 
+                      type === 'transfer' && styles.activeToggleText,
+                      type === 'transfer' && !isDark && { color: '#ffffff' }
+                    ]}>Transfer</Text>
+                  </TouchableOpacity>
                 </View>
 
-                {/* Category Grid */}
-                <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Category</Text>
-                <View style={styles.categoryGrid}>
-                  {categories.map(cat => {
-                    const isSelected = selectedCategory === cat.name;
-                    return (
-                      <TouchableOpacity
-                        key={cat.name}
-                        style={[styles.categoryCard, isSelected && styles.activeCategoryCard]}
-                        onPress={() => setSelectedCategory(cat.name)}
-                      >
-                        <View style={[
-                          styles.categoryIconBg, 
-                          isSelected 
-                            ? (isDark ? styles.activeCategoryIconBg : [styles.activeCategoryIconBg, { backgroundColor: '#0A0A0A' }]) 
-                            : (isDark ? styles.inactiveCategoryIconBg : [styles.inactiveCategoryIconBg, styles.inactiveCategoryIconBgLight])
-                        ]}>
-                          <MaterialIcons 
-                            name={cat.icon as any} 
-                            size={20} 
-                            color={isSelected ? (isDark ? '#0A0A0A' : '#ffffff') : (isDark ? '#ffffff' : '#0A0A0A')} 
-                          />
-                        </View>
-                        <Text style={[
-                          styles.categoryCardText, 
-                          !isDark && styles.textSecondaryLight, 
-                          isSelected && styles.activeCategoryCardText,
-                          isSelected && !isDark && styles.textLight
-                        ]}>
-                          {cat.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                {/* Category Grid / Transfer Info */}
+                {type === 'transfer' ? (
+                  <View style={[styles.transferInfoBox, !isDark && styles.transferInfoBoxLight]}>
+                    <MaterialIcons name="sync-alt" size={20} color={isDark ? '#a6c8ff' : '#208aef'} style={{ marginRight: 10 }} />
+                    <Text style={[styles.transferInfoText, !isDark && styles.textLight]}>
+                      Category will automatically be set to <Text style={{ fontWeight: 'bold' }}>Transfer</Text>
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Category</Text>
+                    <View style={styles.categoryGrid}>
+                      {categories.map(cat => {
+                        const isSelected = selectedCategory === cat.name;
+                        return (
+                          <TouchableOpacity
+                            key={cat.name}
+                            style={[styles.categoryCard, isSelected && styles.activeCategoryCard]}
+                            onPress={() => setSelectedCategory(cat.name)}
+                          >
+                            <View style={[
+                              styles.categoryIconBg, 
+                              isSelected 
+                                ? (isDark ? styles.activeCategoryIconBg : [styles.activeCategoryIconBg, { backgroundColor: '#0A0A0A' }]) 
+                                : (isDark ? styles.inactiveCategoryIconBg : [styles.inactiveCategoryIconBg, styles.inactiveCategoryIconBgLight])
+                            ]}>
+                              <MaterialIcons 
+                                name={cat.icon as any} 
+                                size={20} 
+                                color={isSelected ? (isDark ? '#0A0A0A' : '#ffffff') : (isDark ? '#ffffff' : '#0A0A0A')} 
+                              />
+                            </View>
+                            <Text style={[
+                              styles.categoryCardText, 
+                              !isDark && styles.textSecondaryLight, 
+                              isSelected && styles.activeCategoryCardText,
+                              isSelected && !isDark && styles.textLight
+                            ]}>
+                              {cat.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
 
                 {/* Account Selector */}
-                <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Account / Wallet</Text>
+                <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>
+                  {type === 'transfer' ? 'From Account / Wallet' : 'Account / Wallet'}
+                </Text>
                 {loading ? (
                   <ActivityIndicator size="small" color={isDark ? "#ffffff" : "#0A0A0A"} style={{ marginBottom: 20 }} />
                 ) : (
@@ -323,7 +467,13 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
                             isSelected && styles.activeAccountOption,
                             isSelected && !isDark && { backgroundColor: '#0A0A0A', borderColor: '#0A0A0A' }
                           ]}
-                          onPress={() => setSelectedAccount(acc.id)}
+                          onPress={() => {
+                            setSelectedAccount(acc.id);
+                            if (type === 'transfer' && targetAccount === acc.id) {
+                              const other = accounts.find(a => a.id !== acc.id);
+                              if (other) setTargetAccount(other.id);
+                            }
+                          }}
                         >
                           <MaterialIcons 
                             name={acc.type === 'crypto' ? 'currency-bitcoin' : 'account-balance'} 
@@ -343,6 +493,55 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
                       );
                     })}
                   </ScrollView>
+                )}
+
+                {/* Destination Account Selector (Transfer only) */}
+                {type === 'transfer' && (
+                  <>
+                    <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>To Account / Wallet</Text>
+                    {loading ? (
+                      <ActivityIndicator size="small" color={isDark ? "#ffffff" : "#0A0A0A"} style={{ marginBottom: 20 }} />
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountsScroll}>
+                        {accounts.map(acc => {
+                          const isSelected = targetAccount === acc.id;
+                          return (
+                            <TouchableOpacity
+                              key={acc.id}
+                              style={[
+                                styles.accountOption, 
+                                !isDark && styles.accountOptionLight,
+                                isSelected && styles.activeAccountOption,
+                                isSelected && !isDark && { backgroundColor: '#0A0A0A', borderColor: '#0A0A0A' }
+                              ]}
+                              onPress={() => {
+                                setTargetAccount(acc.id);
+                                if (selectedAccount === acc.id) {
+                                  const other = accounts.find(a => a.id !== acc.id);
+                                  if (other) setSelectedAccount(other.id);
+                                }
+                              }}
+                            >
+                              <MaterialIcons 
+                                name={acc.type === 'crypto' ? 'currency-bitcoin' : 'account-balance'} 
+                                size={16} 
+                                color={isSelected ? (isDark ? '#0A0A0A' : '#ffffff') : '#8e9192'}
+                                style={{ marginRight: 6 }}
+                              />
+                              <Text style={[
+                                styles.accountOptionText, 
+                                !isDark && styles.textSecondaryLight,
+                                isSelected && styles.activeAccountOptionText,
+                                isSelected && !isDark && { color: '#ffffff' }
+                              ]}>
+                                {acc.name} ({formatAmount(acc.balance, 0)})
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </>
                 )}
 
                 {/* Recurring Toggle */}
@@ -675,5 +874,24 @@ const styles = StyleSheet.create({
     color: '#ffb4ab',
     fontSize: 15,
     fontWeight: '700',
+  },
+  transferInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(166, 200, 255, 0.05)',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(166, 200, 255, 0.1)',
+  },
+  transferInfoBoxLight: {
+    backgroundColor: 'rgba(32, 138, 239, 0.05)',
+    borderColor: 'rgba(32, 138, 239, 0.1)',
+  },
+  transferInfoText: {
+    color: '#8e9192',
+    fontSize: 13,
+    flex: 1,
   }
 });

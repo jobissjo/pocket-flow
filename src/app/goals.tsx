@@ -28,12 +28,14 @@ function CircularProgress({ percent, size = 60, strokeWidth = 5, color = '#fffff
   const circumference = radius * 2 * Math.PI;
   const strokeDashoffset = circumference - (Math.min(100, Math.max(0, percent)) / 100) * circumference;
 
+  const { isDark } = useTheme();
+
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
       <Svg width={size} height={size} style={styles.svgRotate}>
         {/* Track circle */}
         <Circle
-          stroke="rgba(255, 255, 255, 0.05)"
+          stroke={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)"}
           fill="none"
           cx={size / 2}
           cy={size / 2}
@@ -129,7 +131,7 @@ export default function GoalsScreen() {
   const totalContribution = goals.reduce((sum, g) => sum + (g.monthly_contribution || 0), 0);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, !isDark && styles.containerLight]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Welcome Section */}
@@ -144,26 +146,26 @@ export default function GoalsScreen() {
 
         {/* AI Recommendation Card */}
         {goals.length > 0 && (
-          <View style={styles.aiGlowCard}>
-            <View style={styles.aiTag}>
-              <MaterialIcons name="auto-awesome" size={14} color="#a6c8ff" />
-              <Text style={styles.aiTagText}>AI Recommendation</Text>
+          <View style={[styles.aiGlowCard, !isDark && styles.aiGlowCardLight]}>
+            <View style={[styles.aiTag, !isDark && styles.aiTagLight]}>
+              <MaterialIcons name="auto-awesome" size={14} color={isDark ? "#a6c8ff" : "#208aef"} />
+              <Text style={[styles.aiTagText, !isDark && styles.aiTagTextLight]}>AI Recommendation</Text>
             </View>
             <View style={styles.aiCardBody}>
               <View style={styles.aiTextContainer}>
-                <Text style={styles.aiTitle}>Optimize Your Journey</Text>
-                <Text style={styles.aiDesc}>
+                <Text style={[styles.aiTitle, !isDark && styles.aiTitleLight]}>Optimize Your Journey</Text>
+                <Text style={[styles.aiDesc, !isDark && styles.aiDescLight]}>
                   Increase contributions by {currencySymbol}50 to hit your 'New Car' goal 1 month early.
                 </Text>
               </View>
               {Platform.OS === 'web' ? (
-                <View style={styles.aiMediaPlaceholder}>
-                  <MaterialIcons name="directions-car" size={32} color="#a6c8ff" />
+                <View style={[styles.aiMediaPlaceholder, !isDark && styles.aiMediaPlaceholderLight]}>
+                  <MaterialIcons name="directions-car" size={32} color={isDark ? "#a6c8ff" : "#208aef"} />
                 </View>
               ) : null}
             </View>
-            <TouchableOpacity style={styles.aiActionBtn}>
-              <Text style={styles.aiActionBtnText}>Apply Adjustment</Text>
+            <TouchableOpacity style={[styles.aiActionBtn, !isDark && styles.aiActionBtnLight]}>
+              <Text style={[styles.aiActionBtnText, !isDark && styles.aiActionBtnTextLight]}>Apply Adjustment</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -216,7 +218,11 @@ export default function GoalsScreen() {
 
               {/* Add New Goal empty state card */}
               <TouchableOpacity 
-                style={[styles.addGoalCard, !isDark && styles.glassCardLight]}
+                style={[
+                  styles.addGoalCard, 
+                  !isDark && styles.glassCardLight,
+                  !isDark && { borderColor: 'rgba(0, 0, 0, 0.12)' }
+                ]}
                 onPress={() => setModalVisible(true)}
               >
                 <View style={[styles.addGoalIconBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
@@ -273,32 +279,32 @@ export default function GoalsScreen() {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Savings Goal</Text>
+          <View style={[styles.modalContent, !isDark && styles.modalContentLight]}>
+            <View style={[styles.modalHeader, { borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}>
+              <Text style={[styles.modalTitle, !isDark && styles.textLight]}>New Savings Goal</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color="#ffffff" />
+                <MaterialIcons name="close" size={24} color={isDark ? "#ffffff" : "#0A0A0A"} />
               </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={styles.formContainer}>
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Goal Name</Text>
+                <Text style={[styles.inputLabel, !isDark && styles.textSecondaryLight]}>Goal Name</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, !isDark && styles.textInputLight]}
                   placeholder="e.g. New Macbook, House Deposit"
-                  placeholderTextColor="rgba(255,255,255,0.2)"
+                  placeholderTextColor={isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"}
                   value={newGoalName}
                   onChangeText={setNewGoalName}
                 />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Target Amount ({currencySymbol})</Text>
+                <Text style={[styles.inputLabel, !isDark && styles.textSecondaryLight]}>Target Amount ({currencySymbol})</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, !isDark && styles.textInputLight]}
                   placeholder="0.00"
-                  placeholderTextColor="rgba(255,255,255,0.2)"
+                  placeholderTextColor={isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"}
                   keyboardType="numeric"
                   value={newGoalTarget}
                   onChangeText={setNewGoalTarget}
@@ -306,11 +312,11 @@ export default function GoalsScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Initial Balance ({currencySymbol})</Text>
+                <Text style={[styles.inputLabel, !isDark && styles.textSecondaryLight]}>Initial Balance ({currencySymbol})</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, !isDark && styles.textInputLight]}
                   placeholder="0.00"
-                  placeholderTextColor="rgba(255,255,255,0.2)"
+                  placeholderTextColor={isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"}
                   keyboardType="numeric"
                   value={newGoalCurrent}
                   onChangeText={setNewGoalCurrent}
@@ -318,19 +324,19 @@ export default function GoalsScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Monthly Contribution ({currencySymbol})</Text>
+                <Text style={[styles.inputLabel, !isDark && styles.textSecondaryLight]}>Monthly Contribution ({currencySymbol})</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, !isDark && styles.textInputLight]}
                   placeholder="0.00"
-                  placeholderTextColor="rgba(255,255,255,0.2)"
+                  placeholderTextColor={isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"}
                   keyboardType="numeric"
                   value={newGoalContribution}
                   onChangeText={setNewGoalContribution}
                 />
               </View>
 
-              <TouchableOpacity style={styles.submitBtn} onPress={handleAddGoal}>
-                <Text style={styles.submitBtnText}>Create Goal</Text>
+              <TouchableOpacity style={[styles.submitBtn, !isDark && styles.submitBtnLight]} onPress={handleAddGoal}>
+                <Text style={[styles.submitBtnText, !isDark && styles.submitBtnTextLight]}>Create Goal</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -642,7 +648,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   modalTitle: {
     fontSize: 18,
@@ -689,5 +694,50 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
     fontSize: 15,
     fontWeight: '700',
+  },
+  aiGlowCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(32, 138, 239, 0.15)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  aiTagLight: {
+    backgroundColor: 'rgba(32, 138, 239, 0.08)',
+  },
+  aiTagTextLight: {
+    color: '#208aef',
+  },
+  aiTitleLight: {
+    color: '#0A0A0A',
+  },
+  aiDescLight: {
+    color: '#60646C',
+  },
+  aiMediaPlaceholderLight: {
+    backgroundColor: 'rgba(32, 138, 239, 0.05)',
+  },
+  aiActionBtnLight: {
+    backgroundColor: '#208aef',
+  },
+  aiActionBtnTextLight: {
+    color: '#ffffff',
+  },
+  modalContentLight: {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  textInputLight: {
+    backgroundColor: '#F2F2F7',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+    color: '#0A0A0A',
+  },
+  submitBtnLight: {
+    backgroundColor: '#0A0A0A',
+    shadowColor: '#000000',
+  },
+  submitBtnTextLight: {
+    color: '#ffffff',
   }
 });
