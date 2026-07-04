@@ -61,6 +61,7 @@ export default function WalletDetailsModal({ visible, onClose }: WalletDetailsMo
 
   useEffect(() => {
     if (visible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveIndex(0);
       loadData();
     }

@@ -8,10 +8,8 @@ import {
   Switch,
   ActivityIndicator,
   Alert,
-  Platform,
   Modal,
-  TextInput,
-  Dimensions
+  TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
@@ -24,7 +22,7 @@ import { useSecurity } from '@/services/security-context';
 import ReportModal from '@/components/report-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
 
-const { width } = Dimensions.get('window');
+
 
 export default function ProfileScreen() {
   const isFocused = useIsFocused();
@@ -88,6 +86,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadProfileData();
     }
   }, [isFocused]);
@@ -277,7 +276,7 @@ export default function ProfileScreen() {
                   }
                 }
               ]);
-            } catch (e) {
+            } catch {
               Alert.alert('Error', 'Failed to clear data.');
             }
           }

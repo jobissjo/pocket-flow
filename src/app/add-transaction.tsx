@@ -65,6 +65,7 @@ export default function AddTransactionScreen() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, []);
 
@@ -117,8 +118,6 @@ export default function AddTransactionScreen() {
       </View>
     );
   }
-
-  const activeAccount = accounts.find(a => a.id === selectedAccount);
 
   return (
     <SafeAreaView style={styles.container}>

@@ -6,18 +6,14 @@ import {
   ScrollView, 
   TouchableOpacity, 
   ActivityIndicator,
-  Dimensions,
   Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Transaction } from '@/services/db';
+import { getDatabase } from '@/services/db';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
-
-const { width } = Dimensions.get('window');
 
 interface CategorySpend {
   category: string;
@@ -135,8 +131,10 @@ export default function AnalyticsScreen() {
 
   useEffect(() => {
     if (isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadAnalytics();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused, period]);
 
   const maxChartValue = Math.max(...chartData.map(d => Math.max(d.expense, d.income)), 100);

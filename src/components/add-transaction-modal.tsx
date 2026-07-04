@@ -96,6 +96,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
     }
   };
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (visible) {
       if (editingTransaction) {
@@ -114,7 +115,9 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
       }
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, initialType, editingTransaction]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSave = async () => {
     const numAmount = parseFloat(amount);

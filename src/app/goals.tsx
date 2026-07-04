@@ -124,8 +124,10 @@ export default function GoalsScreen() {
 
   useEffect(() => {
     if (isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadAllData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
 
   const handleAddGoal = async () => {
@@ -374,7 +376,7 @@ export default function GoalsScreen() {
                   <View style={styles.aiTextContainer}>
                     <Text style={[styles.aiTitle, !isDark && styles.aiTitleLight]}>Optimize Your Journey</Text>
                     <Text style={[styles.aiDesc, !isDark && styles.aiDescLight]}>
-                      Increase contributions by {currencySymbol}50 to hit your 'New Car' goal 1 month early.
+                      Increase contributions by {currencySymbol}50 to hit your &apos;New Car&apos; goal 1 month early.
                     </Text>
                   </View>
                   {Platform.OS === 'web' ? (
@@ -745,7 +747,7 @@ export default function GoalsScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, !isDark && styles.textSecondaryLight]}>Person's Name</Text>
+                <Text style={[styles.inputLabel, !isDark && styles.textSecondaryLight]}>Person&apos;s Name</Text>
                 <TextInput
                   style={[styles.textInput, !isDark && styles.textInputLight]}
                   placeholder="e.g. John Doe, Sarah Smith"

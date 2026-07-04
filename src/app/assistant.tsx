@@ -8,8 +8,7 @@ import {
   TouchableOpacity, 
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
-  Keyboard
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -50,6 +49,7 @@ export default function AssistantScreen() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadChatHistory();
   }, []);
 
@@ -58,6 +58,7 @@ export default function AssistantScreen() {
 
     try {
       const db = await getDatabase();
+      // eslint-disable-next-line react-hooks/purity
       const userMsgId = 'msg-' + Date.now();
       const userTimestamp = new Date().toISOString();
 

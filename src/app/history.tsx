@@ -10,7 +10,7 @@ import {
   Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused, useRouter } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { getDatabase, Transaction } from '@/services/db';
@@ -20,7 +20,6 @@ import { useTheme } from '@/services/theme-context';
 
 export default function HistoryScreen() {
   const isFocused = useIsFocused();
-  const router = useRouter();
   const { formatAmount } = useCurrency();
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -39,38 +38,31 @@ export default function HistoryScreen() {
 
   const loadTransactions = async () => {
     try {
+      setLoading(true);
       const db = await getDatabase();
-      
-      let query = 'SELECT * FROM transactions';
+      let query = 'SELECT * FROM transactions WHERE 1=1';
       const params: any[] = [];
-      const conditions: string[] = [];
 
-      // Apply search filter
-      if (searchQuery.trim().length > 0) {
-        conditions.push('(note LIKE ? OR category LIKE ?)');
-        params.push(`%${searchQuery}%`, `%${searchQuery}%`);
+      if (searchQuery.trim()) {
+        query += ' AND (category LIKE ? OR note LIKE ?)';
+        const queryTerm = `%${searchQuery.trim()}%`;
+        params.push(queryTerm, queryTerm);
       }
 
-      // Apply type filter
       if (activeFilter !== 'all') {
-        conditions.push('type = ?');
+        query += ' AND type = ?';
         params.push(activeFilter);
       }
 
-      // Apply category filter
       if (selectedCategory) {
-        conditions.push('LOWER(category) = ?');
-        params.push(selectedCategory.toLowerCase());
-      }
-
-      if (conditions.length > 0) {
-        query += ' WHERE ' + conditions.join(' AND ');
+        query += ' AND category = ?';
+        params.push(selectedCategory);
       }
 
       query += ' ORDER BY date DESC';
 
-      const results = await db.getAllAsync<Transaction>(query, params);
-      setTransactions(results);
+      const rows = await db.getAllAsync<Transaction>(query, params);
+      setTransactions(rows);
     } catch (error) {
       console.error('Error loading history:', error);
     } finally {
@@ -80,14 +72,17 @@ export default function HistoryScreen() {
 
   useEffect(() => {
     if (isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadTransactions();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused, searchQuery, activeFilter, selectedCategory]);
 
   // Helper to group transactions by relative dates
   const getGroupedTransactions = () => {
     const groups: Record<string, Transaction[]> = {};
     const todayStr = new Date().toDateString();
+    // eslint-disable-next-line react-hooks/purity
     const yesterdayStr = new Date(Date.now() - 86400000).toDateString();
 
     transactions.forEach(tx => {

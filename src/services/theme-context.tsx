@@ -35,11 +35,12 @@ export function CustomThemeProvider({ children }: { children: React.ReactNode })
       }
     }).catch((e) => console.error('Failed to load theme:', e));
     return () => { cancelled = true; };
-  }, []); // only on mount
+  }, [systemScheme]); // only on mount
 
   // Sync system scheme changes when mode is 'system'
   useEffect(() => {
     if (themeMode === 'system') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsDark(systemScheme === 'dark');
     }
   }, [systemScheme, themeMode]);

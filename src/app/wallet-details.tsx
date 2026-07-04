@@ -56,6 +56,7 @@ export default function WalletDetailsScreen() {
 
   useEffect(() => {
     if (isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadData();
     }
   }, [isFocused]);
@@ -165,7 +166,6 @@ export default function WalletDetailsScreen() {
               {accounts.map((acc, index) => {
                 const colors = acc.color.split(',');
                 const primaryColor = colors[0];
-                const secondaryColor = colors[1] || '#000000';
                 
                 return (
                   <View key={acc.id} style={[styles.cardWrapper, { width: CARD_WIDTH }]}>

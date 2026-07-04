@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Account, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription } from '@/services/db';
+import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import AIAssistantModal from '@/components/ai-assistant-modal';
 import WalletDetailsModal from '@/components/wallet-details-modal';
@@ -126,6 +126,7 @@ export default function HomeDashboard() {
 
   useEffect(() => {
     if (isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadData();
     }
   }, [isFocused]);

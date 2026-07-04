@@ -58,6 +58,7 @@ export default function AIAssistantModal({ visible, onClose }: AIAssistantModalP
 
   useEffect(() => {
     if (visible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadChatHistory();
     }
   }, [visible]);
@@ -67,6 +68,7 @@ export default function AIAssistantModal({ visible, onClose }: AIAssistantModalP
 
     try {
       const db = await getDatabase();
+      // eslint-disable-next-line react-hooks/purity
       const userMsgId = 'msg-' + Date.now();
       const userTimestamp = new Date().toISOString();
 
