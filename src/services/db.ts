@@ -33,6 +33,16 @@ export interface SavingsGoal {
   monthly_contribution: number;
 }
 
+export interface DebtLoan {
+  id: string;
+  person_name: string;
+  amount: number; // Positive = Lent (they owe you), Negative = Borrowed (you owe them)
+  description: string;
+  due_date: string;
+  status: 'pending' | 'settled';
+  created_at: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -100,6 +110,16 @@ export async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS debts_loans (
+      id TEXT PRIMARY KEY,
+      person_name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      description TEXT,
+      due_date TEXT,
+      status TEXT CHECK(status IN ('pending', 'settled')) NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL
     );
   `);
 
@@ -202,6 +222,7 @@ export async function clearAllData(): Promise<void> {
     await db.execAsync('DELETE FROM savings_goals;');
     await db.execAsync('DELETE FROM ai_chat_history;');
     await db.execAsync('DELETE FROM settings;');
+    await db.execAsync('DELETE FROM debts_loans;');
     
     // Enable foreign keys back
     await db.execAsync('PRAGMA foreign_keys = ON;');
@@ -233,6 +254,7 @@ export async function exportDatabaseToJson(): Promise<void> {
     const savingsGoals = await db.getAllAsync<any>('SELECT * FROM savings_goals');
     const aiChatHistory = await db.getAllAsync<any>('SELECT * FROM ai_chat_history');
     const settings = await db.getAllAsync<any>('SELECT * FROM settings');
+    const debtsLoans = await db.getAllAsync<any>('SELECT * FROM debts_loans');
 
     const backupData = {
       version: 1,
@@ -242,7 +264,8 @@ export async function exportDatabaseToJson(): Promise<void> {
         transactions,
         savings_goals: savingsGoals,
         ai_chat_history: aiChatHistory,
-        settings
+        settings,
+        debts_loans: debtsLoans
       }
     };
 
@@ -326,7 +349,7 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       throw new Error('Invalid backup file format: missing data.');
     }
 
-    const { accounts, transactions, savings_goals, ai_chat_history, settings } = backup.data;
+    const { accounts, transactions, savings_goals, ai_chat_history, settings, debts_loans } = backup.data;
 
     if (!Array.isArray(accounts) || !Array.isArray(transactions)) {
       throw new Error('Invalid backup data: accounts and transactions must be list arrays.');
@@ -342,6 +365,7 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       await db.execAsync('DELETE FROM savings_goals;');
       await db.execAsync('DELETE FROM ai_chat_history;');
       await db.execAsync('DELETE FROM settings;');
+      await db.execAsync('DELETE FROM debts_loans;');
 
       for (const acc of accounts) {
         await db.runAsync(
@@ -414,12 +438,80 @@ export async function importDatabaseFromJson(): Promise<boolean> {
         }
       }
 
+      if (Array.isArray(debts_loans)) {
+        for (const dl of debts_loans) {
+          await db.runAsync(
+            'INSERT INTO debts_loans (id, person_name, amount, description, due_date, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [
+              dl.id,
+              dl.person_name,
+              dl.amount,
+              dl.description || '',
+              dl.due_date || '',
+              dl.status || 'pending',
+              dl.created_at
+            ]
+          );
+        }
+      }
+
       await db.execAsync('PRAGMA foreign_keys = ON;');
     });
 
     return true;
   } catch (error) {
     console.error('Error importing database:', error);
+    throw error;
+  }
+}
+
+export async function getDebtsLoans(): Promise<DebtLoan[]> {
+  try {
+    const db = await getDatabase();
+    return await db.getAllAsync<DebtLoan>('SELECT * FROM debts_loans ORDER BY created_at DESC');
+  } catch (error) {
+    console.error('Error getting debts & loans:', error);
+    return [];
+  }
+}
+
+export async function addDebtLoan(
+  personName: string,
+  amount: number,
+  description: string,
+  dueDate: string
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const id = 'dl-' + Date.now();
+    const createdAt = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO debts_loans (id, person_name, amount, description, due_date, status, created_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      [id, personName, amount, description, dueDate, createdAt]
+    );
+  } catch (error) {
+    console.error('Error adding debt/loan:', error);
+    throw error;
+  }
+}
+
+export async function settleDebtLoan(id: string): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync("UPDATE debts_loans SET status = 'settled' WHERE id = ?", [id]);
+  } catch (error) {
+    console.error('Error settling debt/loan:', error);
+    throw error;
+  }
+}
+
+export async function deleteDebtLoan(id: string): Promise<void> {
+  try {
+    const db = await getDatabase();
+    await db.runAsync('DELETE FROM debts_loans WHERE id = ?', [id]);
+  } catch (error) {
+    console.error('Error deleting debt/loan:', error);
     throw error;
   }
 }

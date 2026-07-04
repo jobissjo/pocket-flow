@@ -21,6 +21,7 @@ import { getDatabase, Account, getSetting, setSetting, clearAllData, exportDatab
 import { useTheme } from '@/services/theme-context';
 import { getCurrencySymbol } from '@/services/currency';
 import { useSecurity } from '@/services/security-context';
+import ReportModal from '@/components/report-modal';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +43,7 @@ export default function ProfileScreen() {
   const [currencyVisible, setCurrencyVisible] = useState(false);
   const [manageAccountsVisible, setManageAccountsVisible] = useState(false);
   const [accountFormVisible, setAccountFormVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
 
   // Profile Edit fields
   const [editName, setEditName] = useState('');
@@ -418,6 +420,14 @@ export default function ProfileScreen() {
 
         {/* Settings List */}
         <View style={[styles.glassCard, !isDark && styles.glassCardLight, { paddingVertical: 8 }]}>
+          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setReportVisible(true)}>
+            <View style={styles.listLeft}>
+              <MaterialIcons name="assessment" size={22} color="#8e9192" style={{ marginRight: 14 }} />
+              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Financial Reports (PDF / CSV)</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleExportData}>
             <View style={styles.listLeft}>
               <MaterialIcons name="file-download" size={22} color="#8e9192" style={{ marginRight: 14 }} />
@@ -671,6 +681,8 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} />
 
     </SafeAreaView>
   );
