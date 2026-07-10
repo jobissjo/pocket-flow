@@ -16,6 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { getDatabase, Account, Subscription, getSubscriptions, addSubscription, deleteSubscription, pauseSubscription } from '@/services/db';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
+import { GlassCard } from '@/components/ui/glass-card';
 
 interface SubscriptionsModalProps {
   visible: boolean;
@@ -182,7 +183,7 @@ export default function SubscriptionsModal({ visible, onClose }: SubscriptionsMo
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               
               {/* Aggregated Cost Card */}
-              <View style={[styles.aggregateCard, !isDark && styles.glassCardLight, { marginTop: 0, marginBottom: 24 }]}>
+              <GlassCard style={[styles.aggregateCard, { marginTop: 0, marginBottom: 24 }]}>
                 <Text style={[styles.aggTitle, !isDark && styles.textLight]}>Recurring Expenses Summary</Text>
                 <View style={styles.aggDetailsRow}>
                   <View style={styles.aggDetailCol}>
@@ -203,16 +204,16 @@ export default function SubscriptionsModal({ visible, onClose }: SubscriptionsMo
                     {activeSubs.length} Active
                   </Text>
                 </View>
-              </View>
+              </GlassCard>
 
               {/* Subscriptions List */}
               <View style={styles.subList}>
                 {subs.length === 0 ? (
-                  <View style={[styles.emptyStateCard, !isDark && styles.glassCardLight]}>
+                  <GlassCard style={styles.emptyStateCard}>
                     <MaterialIcons name="card-membership" size={40} color="#8e9192" style={{ marginBottom: 12 }} />
                     <Text style={[styles.emptyStateTitle, !isDark && styles.textLight]}>No Recurring Bills</Text>
                     <Text style={[styles.emptyStateSub, !isDark && styles.textSecondaryLight]}>Add bills or subscriptions to track upcoming expenses.</Text>
-                  </View>
+                  </GlassCard>
                 ) : (
                   subs.map((item) => {
                     const cycleLabel = item.billing_cycle.charAt(0).toUpperCase() + item.billing_cycle.slice(1);
@@ -227,11 +228,10 @@ export default function SubscriptionsModal({ visible, onClose }: SubscriptionsMo
                     });
 
                     return (
-                      <View
+                      <GlassCard
                         key={item.id}
                         style={[
                           styles.subCard,
-                          !isDark && styles.glassCardLight,
                           isPaused && { opacity: 0.6 }
                         ]}
                       >
@@ -277,19 +277,19 @@ export default function SubscriptionsModal({ visible, onClose }: SubscriptionsMo
                             </TouchableOpacity>
                           </View>
                         </View>
-                      </View>
+                      </GlassCard>
                     );
                   })
                 )}
 
                 {/* Add New Subscription trigger card */}
-                <TouchableOpacity
-                  style={[styles.addSubBtnCard, !isDark && styles.glassCardLight]}
+                <GlassCard
+                  style={styles.addSubBtnCard}
                   onPress={() => setAddModalVisible(true)}
                 >
                   <MaterialIcons name="add" size={24} color="#8e9192" style={{ marginRight: 8 }} />
                   <Text style={[styles.addSubBtnText, !isDark && styles.textLight]}>Add Subscription</Text>
-                </TouchableOpacity>
+                </GlassCard>
               </View>
 
             </ScrollView>

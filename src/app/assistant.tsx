@@ -16,10 +16,12 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 import { getDatabase, ChatMessage } from '@/services/db';
 import { processAIQuery } from '@/services/ai';
+import { useTheme } from '@/services/theme-context';
 
 export default function AssistantScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
+  const { isDark } = useTheme();
   
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
@@ -119,7 +121,15 @@ export default function AssistantScreen() {
   const renderMessageContent = (msg: ChatMessage) => {
     // Regular text rendering
     if (msg.type !== 'chart' || !msg.structured_data) {
-      return <Text style={msg.role === 'user' ? styles.userMsgText : styles.aiMsgText}>{msg.content}</Text>;
+      return (
+        <Text style={[
+          msg.role === 'user' ? styles.userMsgText : styles.aiMsgText,
+          msg.role === 'user' && !isDark && { color: '#ffffff' },
+          msg.role !== 'user' && !isDark && styles.textLight
+        ]}>
+          {msg.content}
+        </Text>
+      );
     }
 
     // Chart / custom component rendering
@@ -129,18 +139,18 @@ export default function AssistantScreen() {
       if (parsed.chartType === 'spend_breakdown') {
         return (
           <View style={styles.chartContainer}>
-            <Text style={styles.aiMsgText}>{msg.content}</Text>
-            <View style={styles.chartGlowContainer}>
+            <Text style={[styles.aiMsgText, !isDark && styles.textLight]}>{msg.content}</Text>
+            <View style={[styles.chartGlowContainer, !isDark && styles.chartGlowContainerLight]}>
               {parsed.data.map((item: any, idx: number) => {
                 const colors = ['#a6c8ff', '#9e77ed', '#ffb4ab', '#fdba74'];
                 const barColor = colors[idx % colors.length];
                 return (
                   <View key={item.category} style={styles.chartRow}>
                     <View style={styles.chartMeta}>
-                      <Text style={styles.chartCatName}>{item.category}</Text>
-                      <Text style={styles.chartCatAmt}>${item.amount.toFixed(2)}</Text>
+                      <Text style={[styles.chartCatName, !isDark && styles.textLight]}>{item.category}</Text>
+                      <Text style={[styles.chartCatAmt, !isDark && styles.textSecondaryLight]}>${item.amount.toFixed(2)}</Text>
                     </View>
-                    <View style={styles.chatProgressBarBg}>
+                    <View style={[styles.chatProgressBarBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.06)' }]}>
                       <View style={[styles.chatProgressBarFill, { width: `${item.percentage}%`, backgroundColor: barColor }]} />
                     </View>
                   </View>
@@ -154,17 +164,17 @@ export default function AssistantScreen() {
       if (parsed.chartType === 'budget') {
         return (
           <View style={styles.chartContainer}>
-            <Text style={styles.aiMsgText}>{msg.content}</Text>
-            <View style={styles.chartGlowContainer}>
+            <Text style={[styles.aiMsgText, !isDark && styles.textLight]}>{msg.content}</Text>
+            <View style={[styles.chartGlowContainer, !isDark && styles.chartGlowContainerLight]}>
               {parsed.data.map((item: any) => {
                 const barColor = item.percent > 90 ? '#ffb4ab' : item.percent > 75 ? '#9e77ed' : '#a6c8ff';
                 return (
                   <View key={item.name} style={styles.chartRow}>
                     <View style={styles.chartMeta}>
-                      <Text style={styles.chartCatName}>{item.name}</Text>
-                      <Text style={styles.chartCatAmt}>${item.spent.toFixed(0)} / ${item.limit}</Text>
+                      <Text style={[styles.chartCatName, !isDark && styles.textLight]}>{item.name}</Text>
+                      <Text style={[styles.chartCatAmt, !isDark && styles.textSecondaryLight]}>${item.spent.toFixed(0)} / ${item.limit}</Text>
                     </View>
-                    <View style={styles.chatProgressBarBg}>
+                    <View style={[styles.chatProgressBarBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.06)' }]}>
                       <View style={[styles.chatProgressBarFill, { width: `${item.percent}%`, backgroundColor: barColor }]} />
                     </View>
                   </View>
@@ -178,27 +188,31 @@ export default function AssistantScreen() {
       console.error('Failed to parse message structured data:', e);
     }
 
-    return <Text style={styles.aiMsgText}>{msg.content}</Text>;
+    return (
+      <Text style={[styles.aiMsgText, !isDark && styles.textLight]}>
+        {msg.content}
+      </Text>
+    );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         {/* Top Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
           <TouchableOpacity onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={24} color="#ffffff" />
+            <MaterialIcons name="arrow-back" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
           </TouchableOpacity>
           
           <View style={styles.headerAIProfile}>
-            <View style={styles.aiAvatar}>
-              <MaterialIcons name="auto-awesome" size={16} color="#0A0A0A" />
+            <View style={[styles.aiAvatar, !isDark && { backgroundColor: '#0A0A0A' }]}>
+              <MaterialIcons name="auto-awesome" size={16} color={isDark ? '#0A0A0A' : '#ffffff'} />
             </View>
             <View>
-              <Text style={styles.headerTitle}>WealthAI</Text>
+              <Text style={[styles.headerTitle, !isDark && styles.textLight]}>WealthAI</Text>
               <Text style={styles.headerStatus}>Offline Engine</Text>
             </View>
           </View>
@@ -214,7 +228,7 @@ export default function AssistantScreen() {
           onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         >
           {loading ? (
-            <ActivityIndicator size="large" color="#ffffff" style={{ marginTop: 40 }} />
+            <ActivityIndicator size="large" color={isDark ? '#ffffff' : '#0A0A0A'} style={{ marginTop: 40 }} />
           ) : (
             messages.map(msg => {
               const isUser = msg.role === 'user';
@@ -227,16 +241,18 @@ export default function AssistantScreen() {
                   ]}
                 >
                   {!isUser && (
-                    <View style={styles.msgAIAvatar}>
-                      <MaterialIcons name="auto-awesome" size={12} color="#ffffff" />
+                    <View style={[styles.msgAIAvatar, !isDark && { backgroundColor: 'rgba(0, 0, 0, 0.05)' }]}>
+                      <MaterialIcons name="auto-awesome" size={12} color={isDark ? '#ffffff' : '#0A0A0A'} />
                     </View>
                   )}
                   
                   <View style={styles.bubbleCol}>
-                    {!isUser && <Text style={styles.aiNameTag}>WealthAI</Text>}
+                    {!isUser && <Text style={[styles.aiNameTag, !isDark && styles.textSecondaryLight]}>WealthAI</Text>}
                     <View style={[
                       styles.msgBubble, 
-                      isUser ? styles.userBubble : styles.aiBubble
+                      isUser 
+                        ? (isDark ? styles.userBubble : styles.userBubbleLight) 
+                        : (isDark ? styles.aiBubble : styles.aiBubbleLight)
                     ]}>
                       {renderMessageContent(msg)}
                     </View>
@@ -252,12 +268,16 @@ export default function AssistantScreen() {
           {/* Typing Indicator */}
           {isTyping && (
             <View style={[styles.msgBubbleRow, styles.aiBubbleRow]}>
-              <View style={styles.msgAIAvatar}>
-                <MaterialIcons name="auto-awesome" size={12} color="#ffffff" />
+              <View style={[styles.msgAIAvatar, !isDark && { backgroundColor: 'rgba(0, 0, 0, 0.05)' }]}>
+                <MaterialIcons name="auto-awesome" size={12} color={isDark ? '#ffffff' : '#0A0A0A'} />
               </View>
               <View style={styles.bubbleCol}>
-                <Text style={styles.aiNameTag}>WealthAI</Text>
-                <View style={[styles.msgBubble, styles.aiBubble, styles.typingBubble]}>
+                <Text style={[styles.aiNameTag, !isDark && styles.textSecondaryLight]}>WealthAI</Text>
+                <View style={[
+                  styles.msgBubble, 
+                  isDark ? styles.aiBubble : styles.aiBubbleLight, 
+                  styles.typingBubble
+                ]}>
                   <ActivityIndicator size="small" color="#8e9192" />
                 </View>
               </View>
@@ -266,7 +286,7 @@ export default function AssistantScreen() {
         </ScrollView>
 
         {/* Suggestion Chips and Input Container */}
-        <View style={styles.bottomBarContainer}>
+        <View style={[styles.bottomBarContainer, { backgroundColor: 'transparent' }]}>
           {/* Suggestion Chips list */}
           <ScrollView 
             horizontal 
@@ -276,29 +296,29 @@ export default function AssistantScreen() {
             {suggestionChips.map(chip => (
               <TouchableOpacity 
                 key={chip} 
-                style={styles.suggestionChip}
+                style={[styles.suggestionChip, !isDark && styles.suggestionChipLight]}
                 onPress={() => handleSend(chip)}
               >
-                <Text style={styles.suggestionText}>{chip}</Text>
+                <Text style={[styles.suggestionText, !isDark && styles.suggestionTextLight]}>{chip}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
 
           {/* Chat Input Bar */}
-          <View style={styles.inputBar}>
+          <View style={[styles.inputBar, !isDark && styles.inputBarLight]}>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, !isDark && styles.textInputLight]}
               placeholder="Ask WealthAI anything..."
-              placeholderTextColor="rgba(255, 255, 255, 0.3)"
+              placeholderTextColor={isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.4)'}
               value={inputText}
               onChangeText={setInputText}
               onSubmitEditing={() => handleSend(inputText)}
             />
             <TouchableOpacity 
-              style={styles.sendBtn}
+              style={[styles.sendBtn, !isDark && styles.sendBtnLight]}
               onPress={() => handleSend(inputText)}
             >
-              <MaterialIcons name="arrow-upward" size={20} color="#0A0A0A" />
+              <MaterialIcons name="arrow-upward" size={20} color={isDark ? "#0A0A0A" : "#ffffff"} />
             </TouchableOpacity>
           </View>
         </View>
@@ -311,7 +331,44 @@ export default function AssistantScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: 'transparent',
+  },
+  textLight: {
+    color: '#0A0A0A',
+  },
+  textSecondaryLight: {
+    color: '#60646C',
+  },
+  aiBubbleLight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    borderWidth: 1,
+    borderBottomLeftRadius: 4,
+  },
+  userBubbleLight: {
+    backgroundColor: '#208aef',
+    borderBottomRightRadius: 4,
+  },
+  suggestionChipLight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  suggestionTextLight: {
+    color: '#0A0A0A',
+  },
+  inputBarLight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  textInputLight: {
+    color: '#0A0A0A',
+  },
+  sendBtnLight: {
     backgroundColor: '#0A0A0A',
+  },
+  chartGlowContainerLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
   },
   header: {
     flexDirection: 'row',

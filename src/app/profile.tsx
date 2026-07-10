@@ -19,6 +19,7 @@ import { getDatabase, Account, getSetting, setSetting, clearAllData, exportDatab
 import { useTheme } from '@/services/theme-context';
 import { getCurrencySymbol } from '@/services/currency';
 import { useSecurity } from '@/services/security-context';
+import { GlassCard } from '@/components/ui/glass-card';
 import ReportModal from '@/components/report-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
 import InvestmentsModal from '@/components/investments-modal';
@@ -288,7 +289,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, !isDark && styles.containerLight]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* User Profile Header */}
@@ -317,7 +318,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Linked Accounts Section */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+        <GlassCard>
           <View style={styles.cardHeaderRow}>
             <Text style={[styles.cardSectionTitle, !isDark && styles.textLight]}>Linked Accounts</Text>
             <TouchableOpacity onPress={() => setManageAccountsVisible(true)}>
@@ -351,10 +352,10 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </GlassCard>
 
         {/* Settings: App Theme (Manual Toggle) */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+        <GlassCard>
           <View style={styles.settingsRow}>
             <View style={styles.settingLeft}>
               <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
@@ -378,10 +379,10 @@ export default function ProfileScreen() {
               thumbColor={isDark ? '#ffffff' : '#8e9192'}
             />
           </View>
-        </View>
+        </GlassCard>
 
         {/* Security Module */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+        <GlassCard>
           <View style={styles.settingsRow}>
             <View style={styles.settingLeft}>
               <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
@@ -399,10 +400,10 @@ export default function ProfileScreen() {
               thumbColor={biometricsEnabled ? '#ffffff' : '#8e9192'}
             />
           </View>
-        </View>
+        </GlassCard>
 
         {/* Currency Module */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+        <GlassCard>
           <TouchableOpacity 
             style={styles.settingsRow} 
             activeOpacity={0.7}
@@ -419,10 +420,10 @@ export default function ProfileScreen() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>
-        </View>
+        </GlassCard>
 
         {/* Settings List */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight, { paddingVertical: 8 }]}>
+        <GlassCard style={{ paddingVertical: 8 }}>
           <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setReportVisible(true)}>
             <View style={styles.listLeft}>
               <MaterialIcons name="assessment" size={22} color="#8e9192" style={{ marginRight: 14 }} />
@@ -470,10 +471,10 @@ export default function ProfileScreen() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>
-        </View>
+        </GlassCard>
 
         {/* Danger Zone */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight, { paddingVertical: 8, borderColor: 'rgba(255, 180, 171, 0.2)', borderWidth: 1 }]}>
+        <GlassCard style={{ paddingVertical: 8, borderColor: 'rgba(255, 180, 171, 0.2)', borderWidth: 1 }}>
           <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleClearAllData}>
             <View style={styles.listLeft}>
               <MaterialIcons name="delete-forever" size={22} color="#ffb4ab" style={{ marginRight: 14 }} />
@@ -489,7 +490,7 @@ export default function ProfileScreen() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#ffb4ab" />
           </TouchableOpacity>
-        </View>
+        </GlassCard>
 
         <Text style={styles.versionText}>WealthFlow Version 4.2.1-stable (Offline Mode)</Text>
 
@@ -712,10 +713,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  containerLight: {
-    backgroundColor: '#f2f2f7',
+    backgroundColor: 'transparent',
   },
   textLight: {
     color: '#0A0A0A',
@@ -786,23 +784,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginLeft: 6,
-  },
-  glassCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 20,
-    marginBottom: 16,
-  },
-  glassCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   cardHeaderRow: {
     flexDirection: 'row',

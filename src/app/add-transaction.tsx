@@ -18,12 +18,14 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { getDatabase, Account } from '@/services/db';
+import { useTheme } from '@/services/theme-context';
 
 const { width } = Dimensions.get('window');
 
 export default function AddTransactionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { isDark } = useTheme();
   
   // Set default type from params (if passed)
   const initialType = params.type === 'income' ? 'income' : 'expense';
@@ -113,23 +115,23 @@ export default function AddTransactionScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ffffff" />
+      <View style={[styles.loadingContainer, !isDark && { backgroundColor: '#F2F2F7' }]}>
+        <ActivityIndicator size="large" color={isDark ? '#ffffff' : '#0A0A0A'} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
-            <MaterialIcons name="close" size={24} color="#ffffff" />
+            <MaterialIcons name="close" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Transaction</Text>
+          <Text style={[styles.headerTitle, !isDark && styles.textLight]}>Add Transaction</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -137,13 +139,13 @@ export default function AddTransactionScreen() {
           
           {/* Amount Section */}
           <View style={styles.amountContainer}>
-            <Text style={styles.amountLabel}>Amount</Text>
+            <Text style={[styles.amountLabel, !isDark && styles.textSecondaryLight]}>Amount</Text>
             <View style={styles.amountInputRow}>
-              <Text style={styles.currencySymbol}>$</Text>
+              <Text style={[styles.currencySymbol, !isDark && styles.textLight]}>$</Text>
               <TextInput
-                style={styles.amountInput}
+                style={[styles.amountInput, !isDark && styles.textInputAmountLight]}
                 placeholder="0.00"
-                placeholderTextColor="rgba(255, 255, 255, 0.2)"
+                placeholderTextColor={isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.25)'}
                 keyboardType="numeric"
                 value={amount}
                 onChangeText={setAmount}
@@ -153,26 +155,38 @@ export default function AddTransactionScreen() {
           </View>
 
           {/* Form Panel */}
-          <View style={styles.formPanel}>
+          <View style={[styles.formPanel, !isDark && styles.formPanelLight]}>
             
             {/* Type Selector (Income/Expense Segmented Toggle) */}
-            <View style={styles.toggleContainer}>
+            <View style={[styles.toggleContainer, !isDark && styles.toggleContainerLight]}>
               <TouchableOpacity
-                style={[styles.toggleBtn, type === 'expense' && styles.activeExpenseBtn]}
+                style={[
+                  styles.toggleBtn, 
+                  type === 'expense' && (isDark ? styles.activeExpenseBtn : styles.activeExpenseBtnLight)
+                ]}
                 onPress={() => setType('expense')}
               >
-                <Text style={[styles.toggleText, type === 'expense' && styles.activeToggleText]}>Expense</Text>
+                <Text style={[
+                  styles.toggleText, 
+                  type === 'expense' && (isDark ? styles.activeToggleText : styles.activeToggleTextLight)
+                ]}>Expense</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.toggleBtn, type === 'income' && styles.activeIncomeBtn]}
+                style={[
+                  styles.toggleBtn, 
+                  type === 'income' && (isDark ? styles.activeIncomeBtn : styles.activeIncomeBtnLight)
+                ]}
                 onPress={() => setType('income')}
               >
-                <Text style={[styles.toggleText, type === 'income' && styles.activeToggleText]}>Income</Text>
+                <Text style={[
+                  styles.toggleText, 
+                  type === 'income' && (isDark ? styles.activeToggleText : styles.activeToggleTextLight)
+                ]}>Income</Text>
               </TouchableOpacity>
             </View>
 
             {/* Category Grid */}
-            <Text style={styles.fieldLabel}>Category</Text>
+            <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Category</Text>
             <View style={styles.categoryGrid}>
               {categories.map(cat => {
                 const isSelected = selectedCategory === cat.name;
@@ -184,15 +198,21 @@ export default function AddTransactionScreen() {
                   >
                     <View style={[
                       styles.categoryIconBg, 
-                      isSelected ? styles.activeCategoryIconBg : styles.inactiveCategoryIconBg
+                      isSelected 
+                        ? (isDark ? styles.activeCategoryIconBg : styles.activeCategoryIconBgLight) 
+                        : (isDark ? styles.inactiveCategoryIconBg : styles.inactiveCategoryIconBgLight)
                     ]}>
                       <MaterialIcons 
                         name={cat.icon as any} 
                         size={20} 
-                        color={isSelected ? '#0A0A0A' : '#ffffff'} 
+                        color={isSelected ? (isDark ? '#0A0A0A' : '#ffffff') : (isDark ? '#ffffff' : '#0A0A0A')} 
                       />
                     </View>
-                    <Text style={[styles.categoryCardText, isSelected && styles.activeCategoryCardText]}>
+                    <Text style={[
+                      styles.categoryCardText, 
+                      !isDark && styles.textSecondaryLight,
+                      isSelected && (isDark ? styles.activeCategoryCardText : styles.activeCategoryCardTextLight)
+                    ]}>
                       {cat.name}
                     </Text>
                   </TouchableOpacity>
@@ -201,23 +221,31 @@ export default function AddTransactionScreen() {
             </View>
 
             {/* Account Selector dropdown-style button */}
-            <Text style={styles.fieldLabel}>Account / Wallet</Text>
+            <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Account / Wallet</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountsScroll}>
               {accounts.map(acc => {
                 const isSelected = selectedAccount === acc.id;
                 return (
                   <TouchableOpacity
                     key={acc.id}
-                    style={[styles.accountOption, isSelected && styles.activeAccountOption]}
+                    style={[
+                      styles.accountOption, 
+                      !isDark && styles.accountOptionLight,
+                      isSelected && (isDark ? styles.activeAccountOption : styles.activeAccountOptionLight)
+                    ]}
                     onPress={() => setSelectedAccount(acc.id)}
                   >
                     <MaterialIcons 
                       name={acc.type === 'crypto' ? 'currency-bitcoin' : 'account-balance'} 
                       size={16} 
-                      color={isSelected ? '#0A0A0A' : '#8e9192'}
+                      color={isSelected ? (isDark ? '#0A0A0A' : '#ffffff') : (isDark ? '#8e9192' : '#60646C')}
                       style={{ marginRight: 6 }}
                     />
-                    <Text style={[styles.accountOptionText, isSelected && styles.activeAccountOptionText]}>
+                    <Text style={[
+                      styles.accountOptionText, 
+                      !isDark && styles.textSecondaryLight,
+                      isSelected && (isDark ? styles.activeAccountOptionText : styles.activeAccountOptionTextLight)
+                    ]}>
                       {acc.name} (${acc.balance.toLocaleString(undefined, { maximumFractionDigits: 0 })})
                     </Text>
                   </TouchableOpacity>
@@ -226,32 +254,32 @@ export default function AddTransactionScreen() {
             </ScrollView>
 
             {/* Recurring Toggle */}
-            <View style={styles.switchRow}>
+            <View style={[styles.switchRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
               <View style={styles.switchLeft}>
-                <MaterialIcons name="repeat" size={20} color="#8e9192" style={{ marginRight: 12 }} />
-                <Text style={styles.switchLabel}>Set as recurring</Text>
+                <MaterialIcons name="repeat" size={20} color={isDark ? '#8e9192' : '#60646C'} style={{ marginRight: 12 }} />
+                <Text style={[styles.switchLabel, !isDark && styles.textLight]}>Set as recurring</Text>
               </View>
               <Switch
                 value={recurring}
                 onValueChange={setRecurring}
-                trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
-                thumbColor={recurring ? '#ffffff' : '#8e9192'}
+                trackColor={{ false: isDark ? '#3a3a3c' : '#e0e0e0', true: isDark ? '#a6c8ff' : '#208aef' }}
+                thumbColor={recurring ? '#ffffff' : (isDark ? '#8e9192' : '#b0b4ba')}
               />
             </View>
 
             {/* Notes Field */}
-            <Text style={styles.fieldLabel}>Note</Text>
+            <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Note</Text>
             <TextInput
-              style={styles.noteInput}
+              style={[styles.noteInput, !isDark && styles.noteInputLight]}
               placeholder="Add description..."
-              placeholderTextColor="rgba(255, 255, 255, 0.25)"
+              placeholderTextColor={isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.4)'}
               value={note}
               onChangeText={setNote}
             />
 
             {/* Save Button */}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>Save Transaction</Text>
+            <TouchableOpacity style={[styles.saveBtn, !isDark && styles.saveBtnLight]} onPress={handleSave}>
+              <Text style={[styles.saveBtnText, !isDark && styles.saveBtnTextLight]}>Save Transaction</Text>
             </TouchableOpacity>
 
           </View>
@@ -264,7 +292,67 @@ export default function AddTransactionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: 'transparent',
+  },
+  textLight: {
+    color: '#0A0A0A',
+  },
+  textSecondaryLight: {
+    color: '#60646C',
+  },
+  textInputAmountLight: {
+    color: '#0A0A0A',
+  },
+  formPanelLight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  toggleContainerLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  activeExpenseBtnLight: {
     backgroundColor: '#0A0A0A',
+  },
+  activeIncomeBtnLight: {
+    backgroundColor: '#0A0A0A',
+  },
+  activeToggleTextLight: {
+    color: '#ffffff',
+  },
+  inactiveCategoryIconBgLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+    borderColor: 'rgba(0, 0, 0, 0.03)',
+    borderWidth: 1,
+  },
+  activeCategoryIconBgLight: {
+    backgroundColor: '#0A0A0A',
+  },
+  activeCategoryCardTextLight: {
+    color: '#0A0A0A',
+  },
+  accountOptionLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  activeAccountOptionLight: {
+    backgroundColor: '#208aef',
+    borderColor: '#208aef',
+  },
+  activeAccountOptionTextLight: {
+    color: '#ffffff',
+  },
+  noteInputLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    color: '#0A0A0A',
+  },
+  saveBtnLight: {
+    backgroundColor: '#0A0A0A',
+    shadowColor: '#000000',
+  },
+  saveBtnTextLight: {
+    color: '#ffffff',
   },
   loadingContainer: {
     flex: 1,

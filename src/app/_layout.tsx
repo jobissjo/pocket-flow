@@ -7,6 +7,7 @@ import { initializeDatabase } from '@/services/db';
 import { CustomThemeProvider, useTheme } from '@/services/theme-context';
 import { SecurityProvider } from '@/services/security-context';
 import SecurityLock from '@/components/security-lock';
+import { BackgroundBlobs } from '@/components/ui/background-blobs';
 
 function InnerLayout() {
   const { isDark } = useTheme();
@@ -14,7 +15,10 @@ function InnerLayout() {
     <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
       <SecurityProvider>
         <SecurityLock>
-          <AppTabs />
+          <View style={{ flex: 1, backgroundColor: isDark ? '#08080C' : '#F6F6F9' }}>
+            <BackgroundBlobs isDark={isDark} />
+            <AppTabs />
+          </View>
         </SecurityLock>
       </SecurityProvider>
     </ThemeProvider>

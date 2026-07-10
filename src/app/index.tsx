@@ -23,6 +23,7 @@ import InvestmentsModal from '@/components/investments-modal';
 
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
+import { GlassCard } from '@/components/ui/glass-card';
 
 const { width } = Dimensions.get('window');
 
@@ -149,7 +150,7 @@ export default function HomeDashboard() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, !isDark && styles.containerLight]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
@@ -160,16 +161,16 @@ export default function HomeDashboard() {
             <Text style={[styles.headerTitle, !isDark && styles.textLight]}>Your financial summary</Text>
           </View>
           <TouchableOpacity 
-            style={styles.notificationBtn} 
+            style={[styles.notificationBtn, !isDark && { backgroundColor: 'rgba(255, 255, 255, 0.7)', borderColor: 'rgba(0,0,0,0.05)' }]} 
             onPress={() => setAssistantVisible(true)}
           >
-            <MaterialIcons name="auto-awesome" size={24} color="#a6c8ff" />
+            <MaterialIcons name="auto-awesome" size={24} color={isDark ? "#a6c8ff" : "#208aef"} />
           </TouchableOpacity>
         </View>
 
         {/* Investment Portfolio Summary Card */}
-        <TouchableOpacity 
-          style={[styles.investmentCard, !isDark && styles.investmentCardLight]}
+        <GlassCard 
+          style={styles.investmentCard}
           onPress={() => setInvestmentsVisible(true)}
         >
           <View style={styles.investmentHeader}>
@@ -184,10 +185,10 @@ export default function HomeDashboard() {
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </View>
-        </TouchableOpacity>
+        </GlassCard>
 
         {/* Balance Card */}
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+        <GlassCard>
           <View style={styles.balanceHeader}>
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <MaterialIcons name="info-outline" size={18} color="#8e9192" />
@@ -204,33 +205,33 @@ export default function HomeDashboard() {
             <Text style={styles.trendLabel}>from last month</Text>
           </View>
 
-          <View style={styles.balanceDivider} />
+          <View style={[styles.balanceDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
 
           <View style={styles.statsGrid}>
             <View style={styles.statCol}>
               <Text style={styles.statLabel}>Income</Text>
-              <Text style={[styles.statValue, styles.incomeText]}>
+              <Text style={[styles.statValue, isDark ? styles.incomeText : styles.incomeTextLight]}>
                 {formatAmount(incomeSum, 0)}
               </Text>
             </View>
             <View style={styles.statCol}>
               <Text style={styles.statLabel}>Expenses</Text>
-              <Text style={[styles.statValue, styles.expenseText]}>
+              <Text style={[styles.statValue, isDark ? styles.expenseText : styles.expenseTextLight]}>
                 {formatAmount(expenseSum, 0)}
               </Text>
             </View>
           </View>
-        </View>
+        </GlassCard>
 
         {/* AI Quick Insight Banner */}
         <TouchableOpacity 
-          style={styles.aiBanner}
+          style={[styles.aiBanner, !isDark && styles.aiBannerLight]}
           onPress={() => setAssistantVisible(true)}
         >
-          <View style={styles.aiIconContainer}>
-            <MaterialIcons name="auto-awesome" size={18} color="#a6c8ff" />
+          <View style={[styles.aiIconContainer, !isDark && { backgroundColor: 'rgba(32, 138, 239, 0.12)' }]}>
+            <MaterialIcons name="auto-awesome" size={18} color={isDark ? "#a6c8ff" : "#208aef"} />
           </View>
-          <Text style={styles.aiText} numberOfLines={2}>
+          <Text style={[styles.aiText, !isDark && styles.aiTextLight]} numberOfLines={2}>
             You spent 15% less on dining this week compared to last month. Ask me for recommendations!
           </Text>
         </TouchableOpacity>
@@ -241,27 +242,27 @@ export default function HomeDashboard() {
         </View>
         
         <View style={styles.actionsGrid}>
-          <TouchableOpacity 
+          <GlassCard 
             style={styles.actionCard}
             onPress={() => { setAddTxType('expense'); setAddTxVisible(true); }}
           >
             <View style={[styles.actionIconBg, { backgroundColor: 'rgba(255, 180, 171, 0.1)' }]}>
-              <MaterialIcons name="remove-circle-outline" size={24} color="#ffb4ab" />
+              <MaterialIcons name="remove-circle-outline" size={24} color={isDark ? "#ffb4ab" : "#ba1a1a"} />
             </View>
              <Text style={[styles.actionText, !isDark && styles.textLight]}>Add Expense</Text>
-          </TouchableOpacity>
+          </GlassCard>
 
-          <TouchableOpacity 
+          <GlassCard 
             style={styles.actionCard}
             onPress={() => { setAddTxType('income'); setAddTxVisible(true); }}
           >
             <View style={[styles.actionIconBg, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
-              <MaterialIcons name="add-circle-outline" size={24} color="#a6c8ff" />
+              <MaterialIcons name="add-circle-outline" size={24} color={isDark ? "#a6c8ff" : "#208aef"} />
             </View>
             <Text style={[styles.actionText, !isDark && styles.textLight]}>Add Income</Text>
-          </TouchableOpacity>
+          </GlassCard>
 
-          <TouchableOpacity 
+          <GlassCard 
             style={styles.actionCard}
             onPress={() => setWalletDetailsVisible(true)}
           >
@@ -269,17 +270,17 @@ export default function HomeDashboard() {
               <MaterialIcons name="account-balance-wallet" size={24} color="#9e77ed" />
             </View>
             <Text style={[styles.actionText, !isDark && styles.textLight]}>Accounts</Text>
-          </TouchableOpacity>
+          </GlassCard>
 
-          <TouchableOpacity 
+          <GlassCard 
             style={styles.actionCard}
             onPress={() => setAssistantVisible(true)}
           >
-            <View style={[styles.actionIconBg, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
+            <View style={[styles.actionIconBg, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
               <MaterialIcons name="forum" size={24} color={isDark ? "#ffffff" : "#0A0A0A"} />
             </View>
             <Text style={[styles.actionText, !isDark && styles.textLight]}>WealthAI</Text>
-          </TouchableOpacity>
+          </GlassCard>
         </View>
 
         {/* Budgets Progress */}
@@ -290,7 +291,7 @@ export default function HomeDashboard() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+        <GlassCard>
           {budgets.map((b, idx) => {
             const percent = Math.min(100, Math.round((b.spent / b.limit) * 100));
             // Choose color based on percentage
@@ -304,13 +305,13 @@ export default function HomeDashboard() {
                     {formatAmount(b.spent, 0)} / {formatAmount(b.limit, 0)}
                   </Text>
                 </View>
-                <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.06)' }]}>
                   <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: barColor }]} />
                 </View>
               </View>
             );
           })}
-        </View>
+        </GlassCard>
 
         {/* Recent Transactions */}
         <View style={styles.sectionHeaderRow}>
@@ -320,9 +321,9 @@ export default function HomeDashboard() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight, { paddingBottom: 8 }]}>
+        <GlassCard style={{ paddingBottom: 8 }}>
           {recentTransactions.length === 0 ? (
-            <Text style={styles.emptyText}>No recent transactions.</Text>
+            <Text style={[styles.emptyText, !isDark && styles.textSecondaryLight]}>No recent transactions.</Text>
           ) : (
             recentTransactions.map((tx, idx) => {
               const isExpense = tx.amount < 0;
@@ -346,7 +347,7 @@ export default function HomeDashboard() {
               return (
                 <TouchableOpacity 
                   key={tx.id} 
-                  style={styles.txRow}
+                  style={[styles.txRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.05)' }]}
                   activeOpacity={0.7}
                   onPress={() => {
                     setEditingTx(tx);
@@ -354,8 +355,8 @@ export default function HomeDashboard() {
                   }}
                 >
                   <View style={styles.txLeft}>
-                    <View style={styles.txIconContainer}>
-                      <MaterialIcons name={iconName as any} size={20} color="#ffffff" />
+                    <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
+                      <MaterialIcons name={iconName as any} size={20} color={isDark ? "#ffffff" : "#0A0A0A"} />
                     </View>
                     <View>
                       <Text style={[styles.txTitle, !isDark && styles.textLight]}>{tx.note || tx.category}</Text>
@@ -364,14 +365,14 @@ export default function HomeDashboard() {
                       </Text>
                     </View>
                   </View>
-                  <Text style={[styles.txAmount, isExpense ? styles.expenseText : styles.incomeText]}>
+                  <Text style={[styles.txAmount, isExpense ? (isDark ? styles.expenseText : styles.expenseTextLight) : (isDark ? styles.incomeText : styles.incomeTextLight)]}>
                     {formattedAmt}
                   </Text>
                 </TouchableOpacity>
               );
             })
           )}
-        </View>
+        </GlassCard>
 
         {/* Upcoming Bills Widget */}
         <View style={styles.sectionHeaderRow}>
@@ -381,9 +382,9 @@ export default function HomeDashboard() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.glassCard, !isDark && styles.glassCardLight, { paddingBottom: 8, marginBottom: 20 }]}>
+        <GlassCard style={{ paddingBottom: 8, marginBottom: 20 }}>
           {upcomingBills.length === 0 ? (
-            <Text style={[styles.emptyText, { paddingVertical: 12 }]}>No bills due in the next 30 days.</Text>
+            <Text style={[styles.emptyText, !isDark && styles.textSecondaryLight, { paddingVertical: 12 }]}>No bills due in the next 30 days.</Text>
           ) : (
             upcomingBills.slice(0, 3).map((item) => {
               const formattedDate = new Date(item.next_billing_date).toLocaleDateString(undefined, {
@@ -399,7 +400,7 @@ export default function HomeDashboard() {
               else if (item.category.toLowerCase().includes('insurance')) iconName = 'shield';
 
               return (
-                <View key={item.id} style={styles.txRow}>
+                <View key={item.id} style={[styles.txRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.05)' }]}>
                   <View style={styles.txLeft}>
                     <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
                       <MaterialIcons name={iconName as any} size={20} color={isDark ? '#a6c8ff' : '#208aef'} />
@@ -411,14 +412,14 @@ export default function HomeDashboard() {
                       </Text>
                     </View>
                   </View>
-                  <Text style={[styles.txAmount, { color: '#ffb4ab', fontWeight: 'bold' }]}>
+                  <Text style={[styles.txAmount, { color: isDark ? '#ffb4ab' : '#ba1a1a', fontWeight: 'bold' }]}>
                     -{formatAmount(item.amount)}
                   </Text>
                 </View>
               );
             })
           )}
-        </View>
+        </GlassCard>
 
         {/* Extra spacing bottom to clear the tab bar */}
         <View style={{ height: 100 }} />
@@ -467,25 +468,26 @@ export default function HomeDashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  containerLight: {
-    backgroundColor: '#F2F2F7',
-  },
-  glassCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: 'transparent',
   },
   textLight: {
     color: '#0A0A0A',
   },
   textSecondaryLight: {
     color: '#60646C',
+  },
+  incomeTextLight: {
+    color: '#208aef',
+  },
+  expenseTextLight: {
+    color: '#ba1a1a',
+  },
+  aiBannerLight: {
+    backgroundColor: 'rgba(32, 138, 239, 0.08)',
+    borderColor: 'rgba(32, 138, 239, 0.15)',
+  },
+  aiTextLight: {
+    color: '#208aef',
   },
   loadingContainer: {
     flex: 1,
@@ -656,13 +658,9 @@ const styles = StyleSheet.create({
   },
   actionCard: {
     width: (width - 52) / 2,
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 20,
     padding: 16,
     marginHorizontal: 6,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
   },
   actionIconBg: {
@@ -749,21 +747,8 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   investmentCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.4)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     padding: 16,
     marginBottom: 16,
-  },
-  investmentCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0,0,0,0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
   },
   investmentHeader: {
     flexDirection: 'row',

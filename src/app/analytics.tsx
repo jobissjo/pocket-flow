@@ -14,6 +14,7 @@ import { useIsFocused } from 'expo-router';
 import { getDatabase } from '@/services/db';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
+import { GlassCard } from '@/components/ui/glass-card';
 
 interface CategorySpend {
   category: string;
@@ -140,7 +141,7 @@ export default function AnalyticsScreen() {
   const maxChartValue = Math.max(...chartData.map(d => Math.max(d.expense, d.income)), 100);
 
   return (
-    <SafeAreaView style={[styles.container, !isDark && styles.containerLight]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Header & Range Selector */}
@@ -179,7 +180,7 @@ export default function AnalyticsScreen() {
         ) : (
           <>
             {/* Spending Chart Card */}
-            <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+            <GlassCard>
               <View style={styles.chartHeader}>
                 <View>
                   <Text style={[styles.chartTitle, !isDark && styles.textLight]}>Spending Trend</Text>
@@ -190,11 +191,11 @@ export default function AnalyticsScreen() {
                 </View>
                 <View style={styles.legend}>
                   <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#ffb4ab' }]} />
+                    <View style={[styles.legendDot, { backgroundColor: isDark ? '#ffb4ab' : '#ba1a1a' }]} />
                     <Text style={styles.legendText}>Expenses</Text>
                   </View>
                   <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#a6c8ff' }]} />
+                    <View style={[styles.legendDot, { backgroundColor: isDark ? '#a6c8ff' : '#208aef' }]} />
                     <Text style={styles.legendText}>Income</Text>
                   </View>
                 </View>
@@ -215,8 +216,8 @@ export default function AnalyticsScreen() {
                             styles.barFill, 
                             { 
                               height: Math.max(4, incomeHeight), 
-                              backgroundColor: '#a6c8ff',
-                              shadowColor: '#a6c8ff',
+                              backgroundColor: isDark ? '#a6c8ff' : '#208aef',
+                              shadowColor: isDark ? '#a6c8ff' : '#208aef',
                               shadowOpacity: 0.2,
                               shadowRadius: 4,
                             }
@@ -226,8 +227,8 @@ export default function AnalyticsScreen() {
                             styles.barFill, 
                             { 
                               height: Math.max(4, expenseHeight), 
-                              backgroundColor: '#ffb4ab',
-                              shadowColor: '#ffb4ab',
+                              backgroundColor: isDark ? '#ffb4ab' : '#ba1a1a',
+                              shadowColor: isDark ? '#ffb4ab' : '#ba1a1a',
                               shadowOpacity: 0.2,
                               shadowRadius: 4,
                             }
@@ -239,34 +240,36 @@ export default function AnalyticsScreen() {
                   })}
                 </View>
               </View>
-            </View>
+            </GlassCard>
 
             {/* Income vs Expenses Summary */}
             <View style={styles.summaryRow}>
-              <View style={[styles.summaryCard, styles.glassCard, !isDark && styles.glassCardLight]}>
+              <GlassCard style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Total Income</Text>
-                <Text style={[styles.summaryValue, { color: '#a6c8ff' }]}>
+                <Text style={[styles.summaryValue, { color: isDark ? '#a6c8ff' : '#208aef' }]}>
                   {formatAmount(totalIncome)}
                 </Text>
-              </View>
-              <View style={[styles.summaryCard, styles.glassCard, !isDark && styles.glassCardLight]}>
+              </GlassCard>
+              <GlassCard style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Total Expenses</Text>
-                <Text style={[styles.summaryValue, { color: '#ffb4ab' }]}>
+                <Text style={[styles.summaryValue, { color: isDark ? '#ffb4ab' : '#ba1a1a' }]}>
                   {formatAmount(totalExpenses)}
                 </Text>
-              </View>
+              </GlassCard>
             </View>
 
             {/* Category Breakdown Section */}
             <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Spending by Category</Text>
             
-            <View style={[styles.glassCard, !isDark && styles.glassCardLight]}>
+            <GlassCard>
               {categorySpend.length === 0 ? (
                 <Text style={styles.emptyText}>No expenses recorded in this period.</Text>
               ) : (
                 categorySpend.map((cat, index) => {
                   // Generate custom indicator colors
-                  const colors = ['#a6c8ff', '#9e77ed', '#ffb4ab', '#fdba74', '#cbd5e1'];
+                  const colors = isDark 
+                    ? ['#a6c8ff', '#9e77ed', '#ffb4ab', '#fdba74', '#cbd5e1']
+                    : ['#208aef', '#7f56d9', '#ba1a1a', '#ea580c', '#64748b'];
                   const barColor = colors[index % colors.length];
 
                   return (
@@ -282,14 +285,14 @@ export default function AnalyticsScreen() {
                           <Text style={styles.catPercentage}>{cat.percentage}%</Text>
                         </View>
                       </View>
-                      <View style={styles.catProgressBg}>
+                      <View style={[styles.catProgressBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.06)' }]}>
                         <View style={[styles.catProgressFill, { width: `${cat.percentage}%`, backgroundColor: barColor }]} />
                       </View>
                     </View>
                   );
                 })
               )}
-            </View>
+            </GlassCard>
           </>
         )}
 
@@ -303,19 +306,7 @@ export default function AnalyticsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  containerLight: {
-    backgroundColor: '#F2F2F7',
-  },
-  glassCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: 'transparent',
   },
   textLight: {
     color: '#0A0A0A',
@@ -378,11 +369,6 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
   },
   glassCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 16,
   },
   chartHeader: {

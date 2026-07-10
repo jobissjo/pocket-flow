@@ -17,6 +17,8 @@ import { useRouter, useIsFocused } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { getDatabase, Account, Transaction } from '@/services/db';
+import { useTheme } from '@/services/theme-context';
+import { GlassCard } from '@/components/ui/glass-card';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 40;
@@ -25,6 +27,7 @@ export default function WalletDetailsScreen() {
   const isFocused = useIsFocused();
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
+  const { isDark } = useTheme();
   
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -126,26 +129,26 @@ export default function WalletDetailsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       {/* Top Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
         <TouchableOpacity onPress={() => router.back()}>
-          <MaterialIcons name="arrow-back" size={24} color="#ffffff" />
+          <MaterialIcons name="arrow-back" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Wallets & Accounts</Text>
+        <Text style={[styles.headerTitle, !isDark && styles.textLight]}>Wallets & Accounts</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {loading && accounts.length === 0 ? (
-          <ActivityIndicator size="large" color="#ffffff" style={{ marginTop: 40 }} />
+          <ActivityIndicator size="large" color={isDark ? '#ffffff' : '#0A0A0A'} style={{ marginTop: 40 }} />
         ) : (
           <>
             {/* Total balance for selected card */}
             {activeAccount && (
               <View style={styles.balanceInfo}>
-                <Text style={styles.balanceLabel}>{activeAccount.name}</Text>
-                <Text style={styles.balanceAmount}>
+                <Text style={[styles.balanceLabel, !isDark && styles.textSecondaryLight]}>{activeAccount.name}</Text>
+                <Text style={[styles.balanceAmount, !isDark && styles.textLight]}>
                   ${activeAccount.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </View>
@@ -203,33 +206,38 @@ export default function WalletDetailsScreen() {
 
             {/* Main Action Buttons */}
             <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.primaryActionBtn} onPress={handleTransfer}>
-                <MaterialIcons name="send" size={18} color="#0A0A0A" style={{ marginRight: 6 }} />
-                <Text style={styles.primaryActionText}>Transfer Money</Text>
+              <TouchableOpacity 
+                style={[styles.primaryActionBtn, !isDark && styles.primaryActionBtnLight]} 
+                onPress={handleTransfer}
+              >
+                <MaterialIcons name="send" size={18} color={isDark ? "#0A0A0A" : "#ffffff"} style={{ marginRight: 6 }} />
+                <Text style={[styles.primaryActionText, !isDark && styles.primaryActionTextLight]}>Transfer Money</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryActionBtn} onPress={handlePayBill}>
-                <MaterialIcons name="receipt" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                <Text style={styles.secondaryActionText}>Pay Bills</Text>
+              <TouchableOpacity 
+                style={[styles.secondaryActionBtn, !isDark && styles.secondaryActionBtnLight]} 
+                onPress={handlePayBill}
+              >
+                <MaterialIcons name="receipt" size={18} color={isDark ? "#ffffff" : "#0A0A0A"} style={{ marginRight: 6 }} />
+                <Text style={[styles.secondaryActionText, !isDark && styles.textLight]}>Pay Bills</Text>
               </TouchableOpacity>
             </View>
 
             {/* Account Insights Section */}
-            <Text style={styles.sectionTitle}>Account Insights</Text>
+            <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Account Insights</Text>
             
             <View style={styles.insightsGrid}>
-              <View style={[styles.insightBox, styles.glassCard, { flex: 2 }]}>
+              <GlassCard style={[styles.insightBox, { flex: 2 }]}>
                 <View style={styles.insightHeader}>
-                  <Text style={styles.insightLabel}>Spending Velocity</Text>
+                  <Text style={[styles.insightLabel, !isDark && styles.textSecondaryLight]}>Spending Velocity</Text>
                   <Text style={styles.insightGrowth}>+12%</Text>
                 </View>
-                <Text style={styles.insightValue}>$2,440.00</Text>
-                <Text style={styles.insightDesc}>Spent this week</Text>
-              </View>
+                <Text style={[styles.insightValue, !isDark && styles.textLight]}>$2,440.00</Text>
+                <Text style={[styles.insightDesc, !isDark && styles.textSecondaryLight]}>Spent this week</Text>
+              </GlassCard>
               
-              <TouchableOpacity 
+              <GlassCard 
                 style={[
                   styles.insightBox, 
-                  styles.glassCard, 
                   { flex: 1, alignItems: 'center', justifyContent: 'center' },
                   activeAccount && cardLocked[activeAccount.id] && styles.activeLockCard
                 ]}
@@ -242,67 +250,67 @@ export default function WalletDetailsScreen() {
                 />
                 <Text style={[
                   styles.lockText,
+                  !isDark && styles.textSecondaryLight,
                   activeAccount && cardLocked[activeAccount.id] && { color: '#ffb4ab' }
                 ]}>
                   {activeAccount && cardLocked[activeAccount.id] ? 'Card Locked' : 'Lock Card'}
                 </Text>
-              </TouchableOpacity>
+              </GlassCard>
             </View>
 
             {/* APY savings vaults alert */}
-            <View style={[styles.glassCard, styles.apyBanner]}>
+            <GlassCard style={styles.apyBanner}>
               <View style={styles.apyLeft}>
-                <View style={styles.apyIconBg}>
-                  <MaterialIcons name="auto-graph" size={20} color="#ffffff" />
+                <View style={[styles.apyIconBg, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                  <MaterialIcons name="auto-graph" size={20} color={isDark ? '#ffffff' : '#0A0A0A'} />
                 </View>
                 <View style={styles.apyTextContainer}>
-                  <Text style={styles.apyTitle}>Optimized Savings</Text>
-                  <Text style={styles.apyDesc}>Move $420 to vault for 4.5% APY</Text>
+                  <Text style={[styles.apyTitle, !isDark && styles.textLight]}>Optimized Savings</Text>
+                  <Text style={[styles.apyDesc, !isDark && styles.textSecondaryLight]}>Move $420 to vault for 4.5% APY</Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.apyBtn}>
-                <Text style={styles.apyBtnText}>Apply</Text>
+              <TouchableOpacity style={[styles.apyBtn, !isDark && styles.apyBtnLight]}>
+                <Text style={[styles.apyBtnText, !isDark && styles.apyBtnTextLight]}>Apply</Text>
               </TouchableOpacity>
-            </View>
+            </GlassCard>
 
             {/* Wallet transactions */}
-            <Text style={styles.sectionTitle}>Transactions</Text>
+            <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Transactions</Text>
             
-            <View style={[styles.glassCard, { paddingBottom: 8 }]}>
+            <GlassCard style={{ paddingBottom: 8 }}>
               {loading ? (
-                <ActivityIndicator size="small" color="#ffffff" style={{ marginVertical: 20 }} />
+                <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#0A0A0A'} style={{ marginVertical: 20 }} />
               ) : transactions.length === 0 ? (
-                <Text style={styles.emptyText}>No transactions for this account.</Text>
+                <Text style={[styles.emptyText, !isDark && styles.textSecondaryLight]}>No transactions for this account.</Text>
               ) : (
                 transactions.map(tx => {
                   const isExpense = tx.amount < 0;
                   const formattedAmt = `${isExpense ? '-' : '+'}$${Math.abs(tx.amount).toFixed(2)}`;
-                  
                   return (
-                    <View key={tx.id} style={styles.txRow}>
+                    <View key={tx.id} style={[styles.txRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }]}>
                       <View style={styles.txLeft}>
-                        <View style={styles.txIconContainer}>
+                        <View style={[styles.txIconContainer, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' }]}>
                           <MaterialIcons 
                             name={isExpense ? 'arrow-downward' : 'arrow-upward'} 
                             size={16} 
-                            color="#ffffff" 
+                            color={isDark ? '#ffffff' : '#0A0A0A'} 
                           />
                         </View>
                         <View>
-                          <Text style={styles.txTitle}>{tx.note || tx.category}</Text>
-                          <Text style={styles.txSubtitle}>
+                          <Text style={[styles.txTitle, !isDark && styles.textLight]}>{tx.note || tx.category}</Text>
+                          <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
                             {new Date(tx.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                           </Text>
                         </View>
                       </View>
-                      <Text style={[styles.txAmount, isExpense ? styles.expenseText : styles.incomeText]}>
+                      <Text style={[styles.txAmount, isExpense ? styles.expenseText : (isDark ? styles.incomeText : styles.incomeTextLight)]}>
                         {formattedAmt}
                       </Text>
                     </View>
                   );
                 })
               )}
-            </View>
+            </GlassCard>
           </>
         )}
 
@@ -315,7 +323,35 @@ export default function WalletDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: 'transparent',
+  },
+  textLight: {
+    color: '#0A0A0A',
+  },
+  textSecondaryLight: {
+    color: '#60646C',
+  },
+  primaryActionBtnLight: {
     backgroundColor: '#0A0A0A',
+  },
+  primaryActionTextLight: {
+    color: '#ffffff',
+  },
+  secondaryActionBtnLight: {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  apyBtnLight: {
+    backgroundColor: '#0A0A0A',
+  },
+  apyBtnTextLight: {
+    color: '#ffffff',
+  },
+  incomeTextLight: {
+    color: '#208aef',
+  },
+  expenseTextLight: {
+    color: '#ba1a1a',
   },
   header: {
     flexDirection: 'row',

@@ -17,6 +17,7 @@ import { getDatabase, Transaction } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
+import { GlassCard } from '@/components/ui/glass-card';
 
 export default function HistoryScreen() {
   const isFocused = useIsFocused();
@@ -122,7 +123,7 @@ export default function HistoryScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, !isDark && styles.containerLight]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <View style={[styles.searchHeader, !isDark && styles.searchHeaderLight]}>
         <View style={[styles.searchBar, !isDark && styles.searchBarLight]}>
           <MaterialIcons name="search" size={20} color="#8e9192" style={styles.searchIcon} />
@@ -267,7 +268,7 @@ export default function HistoryScreen() {
                   )}
                 </View>
 
-                <View style={[styles.groupCard, !isDark && styles.groupCardLight]}>
+                <GlassCard style={[styles.groupCard, { padding: 0 }]}>
                   {list.map((tx, idx) => {
                     const isExpense = tx.amount < 0;
                     const formattedAmt = (tx.amount > 0 ? '+' : '') + formatAmount(tx.amount);
@@ -309,14 +310,14 @@ export default function HistoryScreen() {
                           </View>
                         </View>
                         <View style={styles.txRight}>
-                          <Text style={[styles.txAmount, isExpense ? styles.expenseText : styles.incomeText]}>
+                          <Text style={[styles.txAmount, isExpense ? (isDark ? styles.expenseText : styles.expenseTextLight) : (isDark ? styles.incomeText : styles.incomeTextLight)]}>
                             {formattedAmt}
                           </Text>
                           <View style={[
                             styles.catBadge, 
-                            { backgroundColor: isExpense ? 'rgba(255, 180, 171, 0.1)' : 'rgba(166, 200, 255, 0.1)' }
+                            { backgroundColor: isExpense ? (isDark ? 'rgba(255, 180, 171, 0.1)' : 'rgba(186, 26, 26, 0.08)') : (isDark ? 'rgba(166, 200, 255, 0.1)' : 'rgba(32, 138, 239, 0.08)') }
                           ]}>
-                            <Text style={[styles.catBadgeText, isExpense ? styles.expenseBadgeText : styles.incomeBadgeText]}>
+                            <Text style={[styles.catBadgeText, isExpense ? (isDark ? styles.expenseBadgeText : styles.expenseBadgeTextLight) : (isDark ? styles.incomeBadgeText : styles.incomeBadgeTextLight)]}>
                               {tx.category}
                             </Text>
                           </View>
@@ -324,7 +325,7 @@ export default function HistoryScreen() {
                       </TouchableOpacity>
                     );
                   })}
-                </View>
+                </GlassCard>
               </View>
             );
           })
@@ -362,19 +363,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  containerLight: {
-    backgroundColor: '#F2F2F7',
-  },
-  glassCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: 'transparent',
   },
   textLight: {
     color: '#0A0A0A',
@@ -382,8 +371,20 @@ const styles = StyleSheet.create({
   textSecondaryLight: {
     color: '#60646C',
   },
+  incomeTextLight: {
+    color: '#208aef',
+  },
+  expenseTextLight: {
+    color: '#ba1a1a',
+  },
+  incomeBadgeTextLight: {
+    color: '#208aef',
+  },
+  expenseBadgeTextLight: {
+    color: '#ba1a1a',
+  },
   searchHeader: {
-    backgroundColor: '#0A0A0A',
+    backgroundColor: 'transparent',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 20,
     borderBottomWidth: 1,
@@ -393,12 +394,18 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(28, 28, 30, 0.6)',
+    backgroundColor: 'rgba(28, 28, 30, 0.45)',
     borderRadius: 14,
     paddingHorizontal: 12,
     height: 48,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+      },
+    }),
   },
   searchIcon: {
     marginRight: 10,
@@ -495,10 +502,7 @@ const styles = StyleSheet.create({
     color: '#8e9192',
   },
   groupCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.4)',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     overflow: 'hidden',
   },
   txItem: {
@@ -585,12 +589,12 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   searchHeaderLight: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: 'transparent',
     borderBottomColor: 'rgba(0, 0, 0, 0.05)',
   },
   searchBarLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    borderColor: 'rgba(0, 0, 0, 0.06)',
   },
   searchInputLight: {
     color: '#0A0A0A',
@@ -608,15 +612,6 @@ const styles = StyleSheet.create({
   },
   activeChipTextLight: {
     color: '#ffffff',
-  },
-  groupCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0,0,0,0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   txBorderLight: {
     borderTopColor: 'rgba(0, 0, 0, 0.05)',

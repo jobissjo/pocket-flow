@@ -21,6 +21,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { getDatabase, SavingsGoal, DebtLoan, Account } from '@/services/db';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
+import { GlassCard } from '@/components/ui/glass-card';
 
 const { width } = Dimensions.get('window');
 
@@ -301,7 +302,7 @@ export default function GoalsScreen() {
   const netDebt = lentTotal - borrowedTotal;
 
   return (
-    <SafeAreaView style={[styles.container, !isDark && styles.containerLight]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Welcome Section */}
@@ -410,7 +411,7 @@ export default function GoalsScreen() {
                 }
 
                 return (
-                  <View key={g.id} style={[styles.goalCard, !isDark && styles.glassCardLight]}>
+                  <GlassCard key={g.id} style={styles.goalCard}>
                     <View style={styles.goalCardHeader}>
                       <View style={[styles.goalIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
                         <MaterialIcons name={iconName as any} size={24} color={color} />
@@ -428,16 +429,12 @@ export default function GoalsScreen() {
                         <Text style={[styles.goalTarget, !isDark && styles.textSecondaryLight]}>Target: {formatAmount(g.target_amount, 0)}</Text>
                       </View>
                     </View>
-                  </View>
+                  </GlassCard>
                 );
               })}
 
-              <TouchableOpacity 
-                style={[
-                  styles.addGoalCard, 
-                  !isDark && styles.glassCardLight,
-                  !isDark && { borderColor: 'rgba(0, 0, 0, 0.12)' }
-                ]}
+              <GlassCard 
+                style={styles.addGoalCard}
                 onPress={() => setModalVisible(true)}
               >
                 <View style={[styles.addGoalIconBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
@@ -445,12 +442,12 @@ export default function GoalsScreen() {
                 </View>
                 <Text style={[styles.addGoalTitle, !isDark && styles.textLight]}>Add New Goal</Text>
                 <Text style={[styles.addGoalSub, !isDark && styles.textSecondaryLight]}>Define a new financial milestone</Text>
-              </TouchableOpacity>
+              </GlassCard>
             </View>
 
             {/* Aggregate Performance Stats */}
             {goals.length > 0 && (
-              <View style={[styles.aggregateCard, !isDark && styles.glassCardLight]}>
+              <GlassCard style={styles.aggregateCard}>
                 <Text style={[styles.aggTitle, !isDark && styles.textLight]}>Aggregate Performance</Text>
                 <View style={styles.aggProgressRow}>
                   <View style={styles.progressBarBg}>
@@ -477,14 +474,14 @@ export default function GoalsScreen() {
                     <Text style={[styles.aggDetailValue, !isDark && styles.textLight]}>Dec 2026</Text>
                   </View>
                 </View>
-              </View>
+              </GlassCard>
             )}
           </>
         ) : (
           /* DEBTS & LOANS TAB CONTENT */
           <>
             {/* Debts Summary Card */}
-            <View style={[styles.aggregateCard, !isDark && styles.glassCardLight, { marginTop: 0, marginBottom: 24 }]}>
+            <GlassCard style={[styles.aggregateCard, { marginTop: 0, marginBottom: 24 }]}>
               <Text style={[styles.aggTitle, !isDark && styles.textLight]}>Commitments Standing</Text>
               
               <View style={styles.aggDetailsRow}>
@@ -510,16 +507,16 @@ export default function GoalsScreen() {
                   {netDebt >= 0 ? '+' : '-'}{formatAmount(Math.abs(netDebt), 0)}
                 </Text>
               </View>
-            </View>
+            </GlassCard>
 
             {/* Debts List */}
             <View style={styles.debtList}>
               {debts.length === 0 ? (
-                <View style={[styles.emptyStateCard, !isDark && styles.glassCardLight]}>
+                <GlassCard style={styles.emptyStateCard}>
                   <MaterialIcons name="assignment-late" size={40} color="#8e9192" style={{ marginBottom: 12 }} />
                   <Text style={[styles.emptyStateTitle, !isDark && styles.textLight]}>No Commitments Yet</Text>
                   <Text style={[styles.emptyStateSub, !isDark && styles.textSecondaryLight]}>Log borrowings and lendings to track them here.</Text>
-                </View>
+                </GlassCard>
               ) : (
                 debts.map((item) => {
                   const isLent = item.amount > 0;
@@ -541,7 +538,7 @@ export default function GoalsScreen() {
                     : null;
 
                   return (
-                    <View key={item.id} style={[styles.debtCard, !isDark && styles.glassCardLight]}>
+                    <GlassCard key={item.id} style={styles.debtCard}>
                       <View style={styles.debtCardLeft}>
                         <View style={[
                           styles.debtIconBg,
@@ -604,19 +601,22 @@ export default function GoalsScreen() {
                           </TouchableOpacity>
                         </View>
                       </View>
-                    </View>
+                    </GlassCard>
                   );
                 })
               )}
 
               {/* Add New Debt commitment row card */}
-              <TouchableOpacity
-                style={[styles.addDebtRowBtn, !isDark && styles.glassCardLight]}
+              <GlassCard
+                style={[
+                  styles.addDebtRowBtn,
+                  !isDark && { borderColor: 'rgba(0, 0, 0, 0.15)' }
+                ]}
                 onPress={() => setDebtModalVisible(true)}
               >
                 <MaterialIcons name="add" size={24} color="#8e9192" style={{ marginRight: 8 }} />
                 <Text style={[styles.addDebtRowText, !isDark && styles.textLight]}>Add Commitment</Text>
-              </TouchableOpacity>
+              </GlassCard>
             </View>
           </>
         )}
@@ -938,19 +938,7 @@ export default function GoalsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  containerLight: {
-    backgroundColor: '#F2F2F7',
-  },
-  glassCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: 'transparent',
   },
   textLight: {
     color: '#0A0A0A',
@@ -1119,15 +1107,11 @@ const styles = StyleSheet.create({
   },
   goalCard: {
     width: (width - 52) / 2,
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 24,
-    padding: 16,
     marginHorizontal: 6,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     justifyContent: 'space-between',
     minHeight: 190,
+    padding: 16,
   },
   goalCardHeader: {
     flexDirection: 'row',
@@ -1214,11 +1198,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   aggregateCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
     marginTop: 12,
   },
   aggTitle: {
@@ -1282,13 +1261,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyStateCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 24,
     padding: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   emptyStateTitle: {
     fontSize: 16,
@@ -1305,11 +1280,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 20,
     padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   debtCardLeft: {
     flexDirection: 'row',
@@ -1392,12 +1363,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(28, 28, 30, 0.3)',
-    borderRadius: 16,
     height: 52,
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   addDebtRowText: {
     color: '#ffffff',
