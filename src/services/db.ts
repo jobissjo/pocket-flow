@@ -11,6 +11,9 @@ export interface Account {
   balance: number;
   details: string;
   color: string; // Comma separated list of gradient colors, e.g. '#1e3a8a,#0f172a'
+  credit_limit?: number;
+  billing_day?: number;
+  due_day?: number;
 }
 
 export interface Transaction {
@@ -117,7 +120,10 @@ export async function initializeDatabase(): Promise<void> {
       type TEXT CHECK(type IN ('bank', 'credit', 'crypto', 'digital')) NOT NULL,
       balance REAL NOT NULL DEFAULT 0,
       details TEXT,
-      color TEXT
+      color TEXT,
+      credit_limit REAL DEFAULT 0,
+      billing_day INTEGER DEFAULT 0,
+      due_day INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
@@ -200,6 +206,17 @@ export async function initializeDatabase(): Promise<void> {
     );
   `);
 
+  // Migrate existing tables
+  try {
+    await db.execAsync('ALTER TABLE accounts ADD COLUMN credit_limit REAL DEFAULT 0;');
+  } catch (_) {}
+  try {
+    await db.execAsync('ALTER TABLE accounts ADD COLUMN billing_day INTEGER DEFAULT 0;');
+  } catch (_) {}
+  try {
+    await db.execAsync('ALTER TABLE accounts ADD COLUMN due_day INTEGER DEFAULT 0;');
+  } catch (_) {}
+
   // Seed data if empty
   const accountsCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM accounts');
   if (accountsCount && accountsCount.count === 0) {
@@ -207,11 +224,11 @@ export async function initializeDatabase(): Promise<void> {
     
     // Seed Accounts
     await db.runAsync(
-      `INSERT INTO accounts (id, name, type, balance, details, color) VALUES 
-      ('chase-1', 'Chase Private Client', 'bank', 84200.00, '•••• •••• •••• 8812', '#1e3a8a,#0f172a'),
-      ('amex-1', 'Amex Platinum', 'credit', 12450.12, '•••• •••• •••• 4007', '#2c3e50,#000000'),
-      ('meta-1', 'MetaMask Pro', 'crypto', 4520.10, '0x71...f92A', '#1e3a8a,#4c1d95'),
-      ('upi-1', 'Instant UPI', 'digital', 41334.00, 'wealthflow@bank', '#0f172a,#1e293b');`
+      `INSERT INTO accounts (id, name, type, balance, details, color, credit_limit, billing_day, due_day) VALUES 
+      ('chase-1', 'Chase Private Client', 'bank', 84200.00, '•••• •••• •••• 8812', '#1e3a8a,#0f172a', 0, 0, 0),
+      ('amex-1', 'Amex Platinum', 'credit', 12450.12, '•••• •••• •••• 4007', '#2c3e50,#000000', 25000.00, 15, 25),
+      ('meta-1', 'MetaMask Pro', 'crypto', 4520.10, '0x71...f92A', '#1e3a8a,#4c1d95', 0, 0, 0),
+      ('upi-1', 'Instant UPI', 'digital', 41334.00, 'wealthflow@bank', '#0f172a,#1e293b', 0, 0, 0);`
     );
 
     // Seed Savings Goals
@@ -458,14 +475,17 @@ export async function importDatabaseFromJson(): Promise<boolean> {
 
       for (const acc of accounts) {
         await db.runAsync(
-          'INSERT INTO accounts (id, name, type, balance, details, color) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT INTO accounts (id, name, type, balance, details, color, credit_limit, billing_day, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             acc.id,
             acc.name,
             acc.type,
             acc.balance ?? 0,
             acc.details || '',
-            acc.color || '#1e3a8a,#0f172a'
+            acc.color || '#1e3a8a,#0f172a',
+            acc.credit_limit ?? 0,
+            acc.billing_day ?? 0,
+            acc.due_day ?? 0
           ]
         );
       }

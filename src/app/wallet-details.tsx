@@ -10,7 +10,9 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Alert,
-  Platform
+  Platform,
+  Modal,
+  TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useIsFocused } from 'expo-router';
@@ -34,6 +36,9 @@ export default function WalletDetailsScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cardLocked, setCardLocked] = useState<Record<string, boolean>>({});
+  const [payModalVisible, setPayModalVisible] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payFromAccount, setPayFromAccount] = useState('');
 
   const loadData = async () => {
     try {
@@ -128,6 +133,75 @@ export default function WalletDetailsScreen() {
     );
   };
 
+  const handlePayCardClick = () => {
+    if (!activeAccount) return;
+    const funding = accounts.filter(a => a.id !== activeAccount.id && a.type !== 'credit');
+    if (funding.length === 0) {
+      Alert.alert('Error', 'You need another bank or digital wallet account to fund the payment.');
+      return;
+    }
+    setPayFromAccount(funding[0].id);
+    const outstanding = activeAccount.credit_limit && activeAccount.credit_limit > activeAccount.balance
+      ? activeAccount.credit_limit - activeAccount.balance
+      : 0;
+    setPayAmount(outstanding > 0 ? outstanding.toFixed(2) : '');
+    setPayModalVisible(true);
+  };
+
+  const handleConfirmPayment = async () => {
+    const amountNum = parseFloat(payAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount.');
+      return;
+    }
+    if (!payFromAccount) {
+      Alert.alert('Error', 'Please select a source account.');
+      return;
+    }
+
+    try {
+      const db = await getDatabase();
+      const fromAccObj = accounts.find(a => a.id === payFromAccount);
+      if (!fromAccObj) return;
+
+      const txBaseId = 'tx-pay-' + Date.now();
+      const dateStr = new Date().toISOString();
+
+      await db.runAsync('BEGIN TRANSACTION;');
+
+      // Outflow from funding account
+      await db.runAsync(
+        `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+         VALUES (?, ?, ?, 'Transfer', ?, 'transfer', ?, 0);`,
+        [txBaseId + '-out', payFromAccount, -amountNum, `Card Payment to ${activeAccount.name}`, dateStr]
+      );
+      await db.runAsync(
+        `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+        [amountNum, payFromAccount]
+      );
+
+      // Inflow to credit card account
+      await db.runAsync(
+        `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+         VALUES (?, ?, ?, 'Transfer', ?, 'transfer', ?, 0);`,
+        [txBaseId + '-in', activeAccount.id, amountNum, `Payment from ${fromAccObj.name}`, dateStr]
+      );
+      await db.runAsync(
+        `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
+        [amountNum, activeAccount.id]
+      );
+
+      await db.runAsync('COMMIT;');
+
+      setPayModalVisible(false);
+      Alert.alert('Success', `Successfully paid $${amountNum.toFixed(2)} to ${activeAccount.name}!`);
+      loadData();
+    } catch (error) {
+      console.error('Error paying credit card:', error);
+      Alert.alert('Error', 'Failed to submit credit card payment.');
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       {/* Top Header */}
@@ -191,6 +265,23 @@ export default function WalletDetailsScreen() {
 
                       <View style={styles.cardBody}>
                         <Text style={styles.cardNumber}>{acc.details}</Text>
+                        
+                        {acc.type === 'credit' && acc.credit_limit && acc.credit_limit > 0 ? (
+                          <View style={{ marginBottom: 12 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <Text style={{ fontSize: 10, color: 'rgba(255, 255, 255, 0.7)', fontWeight: '600' }}>
+                                Limit: ${acc.credit_limit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              </Text>
+                              <Text style={{ fontSize: 10, color: 'rgba(255, 255, 255, 0.7)', fontWeight: '600' }}>
+                                Utilized: {acc.credit_limit > 0 ? Math.round(((acc.credit_limit - acc.balance) / acc.credit_limit) * 100) : 0}%
+                              </Text>
+                            </View>
+                            <View style={{ height: 4, backgroundColor: 'rgba(255, 255, 255, 0.2)', borderRadius: 2, overflow: 'hidden' }}>
+                              <View style={{ height: '100%', width: `${Math.min(100, acc.credit_limit > 0 ? Math.round(((acc.credit_limit - acc.balance) / acc.credit_limit) * 100) : 0)}%`, backgroundColor: '#ffffff' }} />
+                            </View>
+                          </View>
+                        ) : null}
+
                         <View style={styles.cardFooter}>
                           <Text style={styles.cardBalance}>
                             ${acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -206,57 +297,120 @@ export default function WalletDetailsScreen() {
 
             {/* Main Action Buttons */}
             <View style={styles.actionsRow}>
-              <TouchableOpacity 
-                style={[styles.primaryActionBtn, !isDark && styles.primaryActionBtnLight]} 
-                onPress={handleTransfer}
-              >
-                <MaterialIcons name="send" size={18} color={isDark ? "#0A0A0A" : "#ffffff"} style={{ marginRight: 6 }} />
-                <Text style={[styles.primaryActionText, !isDark && styles.primaryActionTextLight]}>Transfer Money</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.secondaryActionBtn, !isDark && styles.secondaryActionBtnLight]} 
-                onPress={handlePayBill}
-              >
-                <MaterialIcons name="receipt" size={18} color={isDark ? "#ffffff" : "#0A0A0A"} style={{ marginRight: 6 }} />
-                <Text style={[styles.secondaryActionText, !isDark && styles.textLight]}>Pay Bills</Text>
-              </TouchableOpacity>
+              {activeAccount && activeAccount.type === 'credit' ? (
+                <TouchableOpacity 
+                  style={[styles.primaryActionBtn, !isDark && styles.primaryActionBtnLight, { backgroundColor: '#a6c8ff' }]} 
+                  onPress={handlePayCardClick}
+                >
+                  <MaterialIcons name="payment" size={18} color="#0A0A0A" style={{ marginRight: 6 }} />
+                  <Text style={[styles.primaryActionText, { color: '#0A0A0A' }]}>Pay Card Balance</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity 
+                    style={[styles.primaryActionBtn, !isDark && styles.primaryActionBtnLight]} 
+                    onPress={handleTransfer}
+                  >
+                    <MaterialIcons name="send" size={18} color={isDark ? "#0A0A0A" : "#ffffff"} style={{ marginRight: 6 }} />
+                    <Text style={[styles.primaryActionText, !isDark && styles.primaryActionTextLight]}>Transfer Money</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.secondaryActionBtn, !isDark && styles.secondaryActionBtnLight]} 
+                    onPress={handlePayBill}
+                  >
+                    <MaterialIcons name="receipt" size={18} color={isDark ? "#ffffff" : "#0A0A0A"} style={{ marginRight: 6 }} />
+                    <Text style={[styles.secondaryActionText, !isDark && styles.textLight]}>Pay Bills</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
             {/* Account Insights Section */}
             <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Account Insights</Text>
             
-            <View style={styles.insightsGrid}>
-              <GlassCard style={[styles.insightBox, { flex: 2 }]}>
-                <View style={styles.insightHeader}>
-                  <Text style={[styles.insightLabel, !isDark && styles.textSecondaryLight]}>Spending Velocity</Text>
-                  <Text style={styles.insightGrowth}>+12%</Text>
-                </View>
-                <Text style={[styles.insightValue, !isDark && styles.textLight]}>$2,440.00</Text>
-                <Text style={[styles.insightDesc, !isDark && styles.textSecondaryLight]}>Spent this week</Text>
-              </GlassCard>
-              
-              <GlassCard 
-                style={[
-                  styles.insightBox, 
-                  { flex: 1, alignItems: 'center', justifyContent: 'center' },
-                  activeAccount && cardLocked[activeAccount.id] && styles.activeLockCard
-                ]}
-                onPress={handleToggleLock}
-              >
-                <MaterialIcons 
-                  name={activeAccount && cardLocked[activeAccount.id] ? 'lock' : 'lock-open'} 
-                  size={28} 
-                  color={activeAccount && cardLocked[activeAccount.id] ? '#ffb4ab' : '#8e9192'} 
-                />
-                <Text style={[
-                  styles.lockText,
-                  !isDark && styles.textSecondaryLight,
-                  activeAccount && cardLocked[activeAccount.id] && { color: '#ffb4ab' }
-                ]}>
-                  {activeAccount && cardLocked[activeAccount.id] ? 'Card Locked' : 'Lock Card'}
-                </Text>
-              </GlassCard>
-            </View>
+            {activeAccount && activeAccount.type === 'credit' ? (
+              <View style={styles.insightsGrid}>
+                <GlassCard style={[styles.insightBox, { flex: 2 }]}>
+                  <View style={styles.insightHeader}>
+                    <Text style={[styles.insightLabel, !isDark && styles.textSecondaryLight]}>Card Billing Cycle</Text>
+                    <MaterialIcons name="credit-card" size={16} color={isDark ? '#a6c8ff' : '#208aef'} />
+                  </View>
+                  <View style={{ marginTop: 10 }}>
+                    <Text style={[styles.creditCycleText, !isDark && styles.textLight]}>
+                      Statement: <Text style={{ fontWeight: 'bold' }}>Day {activeAccount.billing_day || '—'}</Text>
+                    </Text>
+                    <Text style={[styles.creditCycleText, !isDark && styles.textLight, { marginTop: 4 }]}>
+                      Payment Due: <Text style={{ fontWeight: 'bold', color: '#ffb4ab' }}>Day {activeAccount.due_day || '—'}</Text>
+                    </Text>
+                    <Text style={[styles.creditCycleText, !isDark && styles.textLight, { marginTop: 4 }]}>
+                      Outstanding: <Text style={{ fontWeight: 'bold', color: '#ffb4ab' }}>
+                        ${((activeAccount.credit_limit || 0) - activeAccount.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </Text>
+                    </Text>
+                    <Text style={[styles.creditCycleText, !isDark && styles.textLight, { marginTop: 4 }]}>
+                      Available Credit: <Text style={{ fontWeight: 'bold', color: '#a6c8ff' }}>
+                        ${activeAccount.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </Text>
+                    </Text>
+                  </View>
+                </GlassCard>
+                
+                <GlassCard 
+                  style={[
+                    styles.insightBox, 
+                    { flex: 1, alignItems: 'center', justifyContent: 'center' },
+                    cardLocked[activeAccount.id] && styles.activeLockCard
+                  ]}
+                  onPress={handleToggleLock}
+                >
+                  <MaterialIcons 
+                    name={cardLocked[activeAccount.id] ? 'lock' : 'lock-open'} 
+                    size={28} 
+                    color={cardLocked[activeAccount.id] ? '#ffb4ab' : '#8e9192'} 
+                  />
+                  <Text style={[
+                    styles.lockText,
+                    !isDark && styles.textSecondaryLight,
+                    cardLocked[activeAccount.id] && { color: '#ffb4ab' }
+                  ]}>
+                    {cardLocked[activeAccount.id] ? 'Card Locked' : 'Lock Card'}
+                  </Text>
+                </GlassCard>
+              </View>
+            ) : (
+              <View style={styles.insightsGrid}>
+                <GlassCard style={[styles.insightBox, { flex: 2 }]}>
+                  <View style={styles.insightHeader}>
+                    <Text style={[styles.insightLabel, !isDark && styles.textSecondaryLight]}>Spending Velocity</Text>
+                    <Text style={styles.insightGrowth}>+12%</Text>
+                  </View>
+                  <Text style={[styles.insightValue, !isDark && styles.textLight]}>$2,440.00</Text>
+                  <Text style={[styles.insightDesc, !isDark && styles.textSecondaryLight]}>Spent this week</Text>
+                </GlassCard>
+                
+                <GlassCard 
+                  style={[
+                    styles.insightBox, 
+                    { flex: 1, alignItems: 'center', justifyContent: 'center' },
+                    activeAccount && cardLocked[activeAccount.id] && styles.activeLockCard
+                  ]}
+                  onPress={handleToggleLock}
+                >
+                  <MaterialIcons 
+                    name={activeAccount && cardLocked[activeAccount.id] ? 'lock' : 'lock-open'} 
+                    size={28} 
+                    color={activeAccount && cardLocked[activeAccount.id] ? '#ffb4ab' : '#8e9192'} 
+                  />
+                  <Text style={[
+                    styles.lockText,
+                    !isDark && styles.textSecondaryLight,
+                    activeAccount && cardLocked[activeAccount.id] && { color: '#ffb4ab' }
+                  ]}>
+                    {activeAccount && cardLocked[activeAccount.id] ? 'Card Locked' : 'Lock Card'}
+                  </Text>
+                </GlassCard>
+              </View>
+            )}
 
             {/* APY savings vaults alert */}
             <GlassCard style={styles.apyBanner}>
@@ -316,6 +470,77 @@ export default function WalletDetailsScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Pay Credit Card Modal */}
+      {payModalVisible && activeAccount && (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={payModalVisible}
+          onRequestClose={() => setPayModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, !isDark && styles.modalContentLight]}>
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => setPayModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
+                </TouchableOpacity>
+                <Text style={[styles.modalTitle, !isDark && styles.textLight]}>Pay Credit Card</Text>
+                <View style={{ width: 24 }} />
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={[styles.modalSubtitle, !isDark && styles.textSecondaryLight]}>
+                  Paying off <Text style={{ fontWeight: 'bold' }}>{activeAccount.name}</Text>
+                </Text>
+
+                <Text style={styles.fieldLabel}>Payment Amount ($)</Text>
+                <TextInput
+                  style={[styles.modalInput, !isDark && styles.modalInputLight]}
+                  value={payAmount}
+                  onChangeText={setPayAmount}
+                  keyboardType="numeric"
+                  placeholder="0.00"
+                  placeholderTextColor={isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"}
+                  autoFocus
+                />
+
+                <Text style={styles.fieldLabel}>Pay From Account</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.fundingAccountsScroll}>
+                  {accounts
+                    .filter(a => a.id !== activeAccount.id && a.type !== 'credit')
+                    .map(acc => {
+                      const isSelected = payFromAccount === acc.id;
+                      return (
+                        <TouchableOpacity
+                          key={acc.id}
+                          style={[
+                            styles.fundingAccountOption,
+                            !isDark && styles.fundingAccountOptionLight,
+                            isSelected && { backgroundColor: isDark ? '#a6c8ff' : '#208aef', borderColor: isDark ? '#a6c8ff' : '#208aef' }
+                          ]}
+                          onPress={() => setPayFromAccount(acc.id)}
+                        >
+                          <Text style={[
+                            styles.fundingAccountText,
+                            !isDark && styles.textSecondaryLight,
+                            isSelected && { color: isDark ? '#0A0A0A' : '#ffffff', fontWeight: 'bold' }
+                          ]}>
+                            {acc.name} (${acc.balance.toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </ScrollView>
+
+                <TouchableOpacity style={styles.confirmPayBtn} onPress={handleConfirmPayment}>
+                  <Text style={styles.confirmPayBtnText}>Confirm Payment</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -639,5 +864,107 @@ const styles = StyleSheet.create({
     color: '#8e9192',
     textAlign: 'center',
     paddingVertical: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#0A0A0A',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingBottom: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  modalContentLight: {
+    backgroundColor: '#ffffff',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#8e9192',
+    marginBottom: 20,
+  },
+  modalBody: {
+    padding: 24,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    color: '#8e9192',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  modalInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    height: 52,
+    paddingHorizontal: 16,
+    color: '#ffffff',
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  modalInputLight: {
+    backgroundColor: '#f2f2f7',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+    color: '#0A0A0A',
+  },
+  fundingAccountsScroll: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: 16,
+  },
+  fundingAccountOption: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  fundingAccountOptionLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  fundingAccountText: {
+    color: '#8e9192',
+    fontSize: 12,
+  },
+  confirmPayBtn: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    height: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  confirmPayBtnText: {
+    color: '#0A0A0A',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  creditCycleText: {
+    fontSize: 13,
+    color: '#ffffff',
+    fontWeight: '500',
   }
 });

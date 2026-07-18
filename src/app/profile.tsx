@@ -76,6 +76,9 @@ export default function ProfileScreen() {
   const [accBalance, setAccBalance] = useState('');
   const [accDetails, setAccDetails] = useState('');
   const [accColor, setAccColor] = useState('#1e3a8a,#0f172a');
+  const [accCreditLimit, setAccCreditLimit] = useState('');
+  const [accBillingDay, setAccBillingDay] = useState('');
+  const [accDueDay, setAccDueDay] = useState('');
 
   const loadProfileData = async () => {
     try {
@@ -156,6 +159,9 @@ export default function ProfileScreen() {
     setAccBalance('');
     setAccDetails('');
     setAccColor('#1e3a8a,#0f172a');
+    setAccCreditLimit('');
+    setAccBillingDay('');
+    setAccDueDay('');
     setAccountFormVisible(true);
   };
 
@@ -167,6 +173,9 @@ export default function ProfileScreen() {
     setAccBalance(acc.balance.toString());
     setAccDetails(acc.details || '');
     setAccColor(acc.color);
+    setAccCreditLimit(acc.credit_limit ? acc.credit_limit.toString() : '');
+    setAccBillingDay(acc.billing_day ? acc.billing_day.toString() : '');
+    setAccDueDay(acc.due_day ? acc.due_day.toString() : '');
     setAccountFormVisible(true);
   };
 
@@ -181,20 +190,31 @@ export default function ProfileScreen() {
       return;
     }
 
+    const limitNum = accType === 'credit' ? parseFloat(accCreditLimit) || 0 : 0;
+    const billingDayNum = accType === 'credit' ? parseInt(accBillingDay) || 0 : 0;
+    const dueDayNum = accType === 'credit' ? parseInt(accDueDay) || 0 : 0;
+
+    if (accType === 'credit') {
+      if (billingDayNum < 0 || billingDayNum > 31 || dueDayNum < 0 || dueDayNum > 31) {
+        Alert.alert('Error', 'Billing and Due Day must be between 1 and 31.');
+        return;
+      }
+    }
+
     try {
       const db = await getDatabase();
       if (editingAccount) {
         // Edit existing account
         await db.runAsync(
-          `UPDATE accounts SET name = ?, type = ?, balance = ?, details = ?, color = ? WHERE id = ?`,
-          [accName, accType, balNum, accDetails, accColor, editingAccount.id]
+          `UPDATE accounts SET name = ?, type = ?, balance = ?, details = ?, color = ?, credit_limit = ?, billing_day = ?, due_day = ? WHERE id = ?`,
+          [accName, accType, balNum, accDetails, accColor, limitNum, billingDayNum, dueDayNum, editingAccount.id]
         );
       } else {
         // Create new account
         const accId = 'acc-' + Date.now();
         await db.runAsync(
-          `INSERT INTO accounts (id, name, type, balance, details, color) VALUES (?, ?, ?, ?, ?, ?)`,
-          [accId, accName, accType, balNum, accDetails, accColor]
+          `INSERT INTO accounts (id, name, type, balance, details, color, credit_limit, billing_day, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [accId, accName, accType, balNum, accDetails, accColor, limitNum, billingDayNum, dueDayNum]
         );
       }
       setAccountFormVisible(false);
@@ -732,6 +752,47 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
+
+            {accType === 'credit' && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.fieldLabel}>Credit Limit ($)</Text>
+                <TextInput
+                  style={[styles.modalInput, !isDark && styles.modalInputLight]}
+                  value={accCreditLimit}
+                  onChangeText={setAccCreditLimit}
+                  keyboardType="numeric"
+                  placeholder="e.g. 5000"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                />
+
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>Billing Day (1-31)</Text>
+                    <TextInput
+                      style={[styles.modalInput, !isDark && styles.modalInputLight]}
+                      value={accBillingDay}
+                      onChangeText={setAccBillingDay}
+                      keyboardType="numeric"
+                      placeholder="e.g. 15"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      maxLength={2}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>Due Day (1-31)</Text>
+                    <TextInput
+                      style={[styles.modalInput, !isDark && styles.modalInputLight]}
+                      value={accDueDay}
+                      onChangeText={setAccDueDay}
+                      keyboardType="numeric"
+                      placeholder="e.g. 25"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      maxLength={2}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
 
             <View style={styles.formActions}>
               <TouchableOpacity onPress={() => setAccountFormVisible(false)} style={styles.formCancelBtn}>
