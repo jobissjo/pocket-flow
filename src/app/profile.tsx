@@ -26,6 +26,21 @@ import InvestmentsModal from '@/components/investments-modal';
 
 
 
+const presetAvatars = [
+  { id: '1', emoji: '👤', bg: '#475569' },
+  { id: '2', emoji: '🧑‍💻', bg: '#1e3a8a' },
+  { id: '3', emoji: '🚀', bg: '#15803d' },
+  { id: '4', emoji: '🦊', bg: '#b45309' },
+  { id: '5', emoji: '🦁', bg: '#b91c1c' },
+  { id: '6', emoji: '🐱', bg: '#be185d' },
+  { id: '7', emoji: '🦖', bg: '#047857' },
+  { id: '8', emoji: '🦄', bg: '#6d28d9' },
+  { id: '9', emoji: '🤖', bg: '#0369a1' },
+  { id: '10', emoji: '🍕', bg: '#a21caf' },
+  { id: '11', emoji: '💼', bg: '#701a75' },
+  { id: '12', emoji: '💎', bg: '#0f766e' }
+];
+
 export default function ProfileScreen() {
   const isFocused = useIsFocused();
   const { themeMode, setThemeMode, isDark } = useTheme();
@@ -38,6 +53,8 @@ export default function ProfileScreen() {
   const [currency, setCurrency] = useState('USD');
   const [username, setUsername] = useState('Alex');
   const [memberSince, setMemberSince] = useState('June 2026');
+  const [avatar, setAvatar] = useState('👤');
+  const [editAvatar, setEditAvatar] = useState('👤');
 
   // Modal visibility states
   const [editProfileVisible, setEditProfileVisible] = useState(false);
@@ -80,6 +97,9 @@ export default function ProfileScreen() {
       const since = await getSetting('member_since', 'June 2026');
       setMemberSince(since);
 
+      const avatarVal = await getSetting('user_avatar', '👤');
+      setAvatar(avatarVal);
+
     } catch (error) {
       console.error('Error loading profile data:', error);
     } finally {
@@ -115,8 +135,10 @@ export default function ProfileScreen() {
     }
     await setSetting('username', editName);
     await setSetting('member_since', editMember);
+    await setSetting('user_avatar', editAvatar);
     setUsername(editName);
     setMemberSince(editMember);
+    setAvatar(editAvatar);
     setEditProfileVisible(false);
   };
 
@@ -295,14 +317,15 @@ export default function ProfileScreen() {
         {/* User Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarBorder}>
-            <View style={[styles.avatarPlaceholder, !isDark && styles.avatarPlaceholderLight]}>
-              <MaterialIcons name="person" size={56} color={isDark ? '#ffffff' : '#0A0A0A'} />
+            <View style={[styles.avatarPlaceholder, { backgroundColor: (presetAvatars.find(a => a.emoji === avatar) || presetAvatars[0]).bg }]}>
+              <Text style={{ fontSize: 48 }}>{(presetAvatars.find(a => a.emoji === avatar) || presetAvatars[0]).emoji}</Text>
             </View>
             <TouchableOpacity 
               style={styles.editBtn}
               onPress={() => {
                 setEditName(username);
                 setEditMember(memberSince);
+                setEditAvatar(avatar);
                 setEditProfileVisible(true);
               }}
             >
@@ -532,6 +555,26 @@ export default function ProfileScreen() {
                 placeholder="e.g. June 2026"
                 placeholderTextColor="rgba(255,255,255,0.3)"
               />
+
+              <Text style={styles.fieldLabel}>Choose Avatar</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarPresetGrid}>
+                {presetAvatars.map((item) => {
+                  const isSelected = editAvatar === item.emoji;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.avatarPresetOption,
+                        { backgroundColor: item.bg },
+                        isSelected && { borderColor: isDark ? '#ffffff' : '#0A0A0A', borderWidth: 2, transform: [{ scale: 1.1 }] }
+                      ]}
+                      onPress={() => setEditAvatar(item.emoji)}
+                    >
+                      <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
               <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
                 <Text style={styles.saveBtnText}>Save Changes</Text>
@@ -1112,5 +1155,20 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
     fontSize: 14,
     fontWeight: '700',
+  },
+  avatarPresetGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 10,
+    marginBottom: 20,
+  },
+  avatarPresetOption: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
   }
 });

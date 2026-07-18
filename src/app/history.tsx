@@ -302,8 +302,8 @@ export default function HistoryScreen() {
                           <View style={[styles.txIconContainer, !isDark && styles.txIconContainerLight]}>
                             <MaterialIcons name={iconName as any} size={20} color={isDark ? "#ffffff" : "#0A0A0A"} />
                           </View>
-                          <View>
-                            <Text style={[styles.txTitle, !isDark && styles.textLight]}>{tx.note || tx.category}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.txTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">{tx.note || tx.category}</Text>
                             <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
                               {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </Text>
@@ -520,6 +520,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    marginRight: 16,
   },
   txIconContainer: {
     width: 44,

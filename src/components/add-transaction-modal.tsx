@@ -19,6 +19,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { getDatabase, Account, Transaction } from '@/services/db';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
+import DateTimePicker from '@expo/ui/community/datetime-picker';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +43,17 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
   const [recurring, setRecurring] = useState(false);
   const [note, setNote] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [date, setDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (selectedDate) {
+      setDate(selectedDate);
+    }
+  };
 
   // Categories list with corresponding icons
   const categories = [
@@ -106,13 +118,16 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
         setRecurring(editingTransaction.recurring === 1);
         setSelectedCategory(editingTransaction.category);
         setSelectedAccount(editingTransaction.account_id);
+        setDate(new Date(editingTransaction.date));
       } else {
         setType(initialType);
         setAmount('');
         setNote('');
         setRecurring(false);
         setSelectedCategory(initialType === 'transfer' ? 'Transfer' : 'Food');
+        setDate(new Date());
       }
+      setShowDatePicker(false);
       loadData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,7 +191,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
         }
       }
 
-      const dateStr = editingTransaction ? editingTransaction.date : new Date().toISOString();
+      const dateStr = date.toISOString();
 
       // 2. Perform fresh insertion based on selected type
       if (type === 'transfer') {
@@ -547,6 +562,49 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
                   </>
                 )}
 
+                {/* Date Field */}
+                <View style={[styles.switchRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                  <View style={styles.switchLeft}>
+                    <MaterialIcons name="event" size={20} color={isDark ? '#8e9192' : '#60646C'} style={{ marginRight: 12 }} />
+                    <Text style={[styles.switchLabel, !isDark && styles.textLight]}>Date</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.datePickerBtn, !isDark && styles.datePickerBtnLight]}
+                    onPress={() => {
+                      if (Platform.OS === 'android') {
+                        setShowDatePicker(true);
+                      } else {
+                        setShowDatePicker(!showDatePicker);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.datePickerText, !isDark && styles.datePickerTextLight]}>
+                      {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* iOS/Web Inline Picker */}
+                {showDatePicker && Platform.OS !== 'android' && (
+                  <View style={[styles.inlinePickerContainer, !isDark && styles.inlinePickerContainerLight]}>
+                    <DateTimePicker
+                      value={date}
+                      mode="date"
+                      onChange={handleDateChange}
+                    />
+                  </View>
+                )}
+
+                {/* Android Dialog Picker */}
+                {showDatePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={date}
+                    mode="date"
+                    presentation="dialog"
+                    onChange={handleDateChange}
+                  />
+                )}
+
                 {/* Recurring Toggle */}
                 <View style={styles.switchRow}>
                   <View style={styles.switchLeft}>
@@ -896,5 +954,38 @@ const styles = StyleSheet.create({
     color: '#8e9192',
     fontSize: 13,
     flex: 1,
+  },
+  datePickerBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  datePickerBtnLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  datePickerText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  datePickerTextLight: {
+    color: '#0A0A0A',
+  },
+  inlinePickerContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: 14,
+    padding: 8,
+    marginBottom: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  inlinePickerContainerLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.01)',
+    borderColor: 'rgba(0, 0, 0, 0.03)',
   }
 });

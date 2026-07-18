@@ -40,6 +40,7 @@ export default function HomeDashboard() {
   const [budgets, setBudgets] = useState<{ category: string; spent: number; limit: number }[]>([]);
   const [username, setUsername] = useState('Alex');
   const [portfolioVal, setPortfolioVal] = useState(0);
+  const [avatar, setAvatar] = useState('👤');
 
   // Modal Visibility States
   const [addTxVisible, setAddTxVisible] = useState(false);
@@ -62,6 +63,9 @@ export default function HomeDashboard() {
       // Load username setting
       const name = await getSetting('username', 'Alex');
       setUsername(name);
+
+      const avatarVal = await getSetting('user_avatar', '👤');
+      setAvatar(avatarVal);
 
       // 1. Fetch total balance
       const balanceRow = await db.getFirstAsync<{ total: number }>('SELECT SUM(balance) as total FROM accounts');
@@ -156,16 +160,24 @@ export default function HomeDashboard() {
         
         {/* Header bar */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1, marginRight: 8 }}>
             <Text style={[styles.greeting, !isDark && styles.textSecondaryLight]}>Good morning, {username}</Text>
-            <Text style={[styles.headerTitle, !isDark && styles.textLight]}>Your financial summary</Text>
+            <Text style={[styles.headerTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">Your financial summary</Text>
           </View>
-          <TouchableOpacity 
-            style={[styles.notificationBtn, !isDark && { backgroundColor: 'rgba(255, 255, 255, 0.7)', borderColor: 'rgba(0,0,0,0.05)' }]} 
-            onPress={() => setAssistantVisible(true)}
-          >
-            <MaterialIcons name="auto-awesome" size={24} color={isDark ? "#a6c8ff" : "#208aef"} />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={[styles.notificationBtn, !isDark && { backgroundColor: 'rgba(255, 255, 255, 0.7)', borderColor: 'rgba(0,0,0,0.05)' }, { marginRight: 8 }]} 
+              onPress={() => setAssistantVisible(true)}
+            >
+              <MaterialIcons name="auto-awesome" size={24} color={isDark ? "#a6c8ff" : "#208aef"} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.notificationBtn, !isDark && { backgroundColor: 'rgba(255, 255, 255, 0.7)', borderColor: 'rgba(0,0,0,0.05)' }]} 
+              onPress={() => router.push('/profile')}
+            >
+              <Text style={{ fontSize: 20 }}>{avatar}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Investment Portfolio Summary Card */}
@@ -358,8 +370,8 @@ export default function HomeDashboard() {
                     <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
                       <MaterialIcons name={iconName as any} size={20} color={isDark ? "#ffffff" : "#0A0A0A"} />
                     </View>
-                    <View>
-                      <Text style={[styles.txTitle, !isDark && styles.textLight]}>{tx.note || tx.category}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.txTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">{tx.note || tx.category}</Text>
                       <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
                         {new Date(tx.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                       </Text>
@@ -405,8 +417,8 @@ export default function HomeDashboard() {
                     <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
                       <MaterialIcons name={iconName as any} size={20} color={isDark ? '#a6c8ff' : '#208aef'} />
                     </View>
-                    <View>
-                      <Text style={[styles.txTitle, !isDark && styles.textLight]}>{item.name}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.txTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
                       <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
                         Due: {formattedDate}
                       </Text>
@@ -717,6 +729,8 @@ const styles = StyleSheet.create({
   txLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    marginRight: 16,
   },
   txIconContainer: {
     width: 40,
@@ -774,5 +788,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     marginTop: 2,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
   }
 });
