@@ -14,12 +14,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments } from '@/services/db';
+import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments, isOnboardingCompleted } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import AIAssistantModal from '@/components/ai-assistant-modal';
 import WalletDetailsModal from '@/components/wallet-details-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
 import InvestmentsModal from '@/components/investments-modal';
+import OnboardingModal from '@/components/onboarding-modal';
 
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
@@ -51,9 +52,16 @@ export default function HomeDashboard() {
   const [subsVisible, setSubsVisible] = useState(false);
   const [upcomingBills, setUpcomingBills] = useState<Subscription[]>([]);
   const [investmentsVisible, setInvestmentsVisible] = useState(false);
+  const [onboardingVisible, setOnboardingVisible] = useState(false);
 
   const loadData = async () => {
     try {
+      // Check onboarding state first
+      const hasCompleted = await isOnboardingCompleted();
+      if (!hasCompleted) {
+        setOnboardingVisible(true);
+      }
+
       // First auto-apply past-due recurring bills & SIPs
       await autoApplySubscriptions();
       await autoApplySIPs();
@@ -179,6 +187,50 @@ export default function HomeDashboard() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Quick Start Guide Card */}
+        <GlassCard style={{ marginBottom: 16, padding: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <MaterialIcons name="auto-awesome" size={18} color="#3B82F6" />
+              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>
+                Quick Start Guide
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setOnboardingVisible(true)}>
+              <Text style={{ fontSize: 12, color: '#3B82F6', fontWeight: '600' }}>Replay Guide</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ gap: 8 }}>
+            <TouchableOpacity 
+              onPress={() => { setAddTxType('expense'); setAddTxVisible(true); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
+            >
+              <MaterialIcons name="add-circle-outline" size={20} color="#10B981" />
+              <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#CBD5E1' : '#334155' }}>Log your first Income or Expense</Text>
+              <MaterialIcons name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => setAssistantVisible(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
+            >
+              <MaterialIcons name="smart-toy" size={20} color="#8B5CF6" />
+              <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#CBD5E1' : '#334155' }}>Ask AI Assistant for advice</Text>
+              <MaterialIcons name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => router.push('/goals')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
+            >
+              <MaterialIcons name="flag" size={20} color="#F59E0B" />
+              <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#CBD5E1' : '#334155' }}>Set up a Savings Goal</Text>
+              <MaterialIcons name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+        </GlassCard>
 
         {/* Investment Portfolio Summary Card */}
         <GlassCard 
@@ -472,6 +524,14 @@ export default function HomeDashboard() {
           setInvestmentsVisible(false);
           loadData();
         }} 
+      />
+
+      <OnboardingModal
+        visible={onboardingVisible}
+        onFinish={() => {
+          setOnboardingVisible(false);
+          loadData();
+        }}
       />
     </SafeAreaView>
   );

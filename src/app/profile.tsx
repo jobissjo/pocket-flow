@@ -15,7 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Account, getSetting, setSetting, clearAllData, exportDatabaseToJson, importDatabaseFromJson } from '@/services/db';
+import { getDatabase, Account, getSetting, setSetting, clearAllData, exportDatabaseToJson, importDatabaseFromJson, resetOnboarding } from '@/services/db';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/services/theme-context';
 import { getCurrencySymbol } from '@/services/currency';
 import { useSecurity } from '@/services/security-context';
@@ -43,6 +44,7 @@ const presetAvatars = [
 
 export default function ProfileScreen() {
   const isFocused = useIsFocused();
+  const router = useRouter();
   const { themeMode, setThemeMode, isDark } = useTheme();
   const { biometricsEnabled, toggleBiometrics, lockVault, hasSecurity } = useSecurity();
 
@@ -301,6 +303,14 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleReplayOnboarding = async () => {
+    await resetOnboarding();
+    Alert.alert('App Guide Reset', 'The welcome guide & setup wizard will appear when you return to Home Dashboard.', [
+      { text: 'Go to Dashboard', onPress: () => router.push('/') },
+      { text: 'OK' }
+    ]);
+  };
+
   const handleClearAllData = () => {
     Alert.alert(
       'Clear All Data?',
@@ -503,6 +513,14 @@ export default function ProfileScreen() {
             <View style={styles.listLeft}>
               <MaterialIcons name="file-upload" size={22} color="#8e9192" style={{ marginRight: 14 }} />
               <Text style={[styles.listTitle, !isDark && styles.textLight]}>Import Backup (JSON)</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleReplayOnboarding}>
+            <View style={styles.listLeft}>
+              <MaterialIcons name="auto-awesome" size={22} color="#3B82F6" style={{ marginRight: 14 }} />
+              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Replay App Intro & Setup Guide</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>

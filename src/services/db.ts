@@ -303,6 +303,20 @@ export async function setSetting(key: string, value: string): Promise<void> {
   }
 }
 
+export async function isOnboardingCompleted(): Promise<boolean> {
+  const val = await getSetting('has_completed_onboarding', 'false');
+  return val === 'true';
+}
+
+export async function markOnboardingCompleted(): Promise<void> {
+  await setSetting('has_completed_onboarding', 'true');
+}
+
+export async function resetOnboarding(): Promise<void> {
+  await setSetting('has_completed_onboarding', 'false');
+}
+
+
 export async function clearAllData(): Promise<void> {
   try {
     const db = await getDatabase();

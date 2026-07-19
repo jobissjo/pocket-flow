@@ -25,10 +25,11 @@ export function BackgroundBlobs({ isDark }: BackgroundBlobsProps) {
         </>
       ) : (
         <>
-          {/* Light Mode Soft Pastel Accents */}
-          <Circle cx={width * 0.1} cy={height * 0.2} r="160" fill="#ebedff" filter="url(#blur)" opacity="0.75" />
-          <Circle cx={width * 0.9} cy={height * 0.6} r="180" fill="#e1f3ff" filter="url(#blur)" opacity="0.75" />
-          <Circle cx={width * 0.4} cy={height * 0.9} r="140" fill="#f8e5ff" filter="url(#blur)" opacity="0.6" />
+          {/* Light Mode Soft Pastel Mesh Gradient Accents */}
+          <Circle cx={width * 0.1} cy={height * 0.15} r="180" fill="#DBEAFE" filter="url(#blur)" opacity="0.8" />
+          <Circle cx={width * 0.9} cy={height * 0.35} r="200" fill="#E0E7FF" filter="url(#blur)" opacity="0.75" />
+          <Circle cx={width * 0.25} cy={height * 0.65} r="170" fill="#F3E8FF" filter="url(#blur)" opacity="0.8" />
+          <Circle cx={width * 0.8} cy={height * 0.85} r="190" fill="#FCE7F3" filter="url(#blur)" opacity="0.7" />
         </>
       )}
     </Svg>
