@@ -76,7 +76,7 @@ export default function HomeDashboard() {
       setAvatar(avatarVal);
 
       // 1. Fetch total balance
-      const balanceRow = await db.getFirstAsync<{ total: number }>('SELECT SUM(balance) as total FROM accounts');
+      const balanceRow = await db.getFirstAsync<{ total: number }>('SELECT COALESCE(SUM(balance), 0) as total FROM accounts');
       setTotalBalance(balanceRow?.total || 0);
 
       // 2. Fetch income and expense sums
@@ -155,7 +155,7 @@ export default function HomeDashboard() {
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, !isDark && styles.containerLight]}>
+      <View style={[styles.loadingContainer, !isDark && { backgroundColor: '#F2F2F7' }]}>
         <ActivityIndicator size="large" color={isDark ? "#ffffff" : "#0A0A0A"} />
       </View>
     );

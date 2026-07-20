@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,7 +14,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/services/theme-context';
 import { GlassCard } from '@/components/ui/glass-card';
-import { setSetting, markOnboardingCompleted, getDatabase } from '@/services/db';
+import { getSetting, setSetting, markOnboardingCompleted, getDatabase } from '@/services/db';
 
 const { width } = Dimensions.get('window');
 
@@ -69,6 +69,21 @@ export default function OnboardingModal({ visible, onFinish }: OnboardingModalPr
   const [startingBalance, setStartingBalance] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (visible) {
+      getSetting('username', 'Alex').then((existingName) => {
+        if (existingName && existingName !== 'Friend') {
+          setName(existingName);
+        }
+      });
+      getSetting('currency', 'USD').then((curr) => {
+        setSelectedCurrency(curr);
+      });
+    }
+  }, [visible]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const handleNext = () => {
     if (currentStep < 3) {
       setCurrentStep(currentStep + 1);
@@ -81,26 +96,36 @@ export default function OnboardingModal({ visible, onFinish }: OnboardingModalPr
     }
   };
 
+  const handleSkip = async () => {
+    await markOnboardingCompleted();
+    onFinish();
+  };
+
   const handleCompleteSetup = async () => {
     try {
       setIsSaving(true);
-      const trimmedName = name.trim() || 'Friend';
-      const initialBalanceNum = parseFloat(startingBalance) || 0;
+      const existingName = await getSetting('username', 'Alex');
+      const trimmedName = name.trim() || (existingName && existingName !== 'Friend' ? existingName : 'Alex');
 
       // 1. Save user settings
       await setSetting('username', trimmedName);
       await setSetting('currency', selectedCurrency);
 
-      // 2. Update initial wallet balance in db if user entered one
-      const db = await getDatabase();
-      const firstAccount = await db.getFirstAsync<{ id: string }>('SELECT id FROM accounts LIMIT 1');
-      if (firstAccount) {
-        await db.runAsync('UPDATE accounts SET balance = ? WHERE id = ?', [initialBalanceNum, firstAccount.id]);
-      } else {
-        await db.runAsync(
-          "INSERT INTO accounts (id, name, type, balance, details, color) VALUES ('main-1', 'Main Account', 'bank', ?, 'Primary Wallet', '#1e3a8a,#0f172a')",
-          [initialBalanceNum]
-        );
+      // 2. Update initial wallet balance in db ONLY if user explicitly typed a balance
+      if (startingBalance.trim() !== '') {
+        const initialBalanceNum = parseFloat(startingBalance);
+        if (!isNaN(initialBalanceNum)) {
+          const db = await getDatabase();
+          const firstAccount = await db.getFirstAsync<{ id: string }>('SELECT id FROM accounts LIMIT 1');
+          if (firstAccount) {
+            await db.runAsync('UPDATE accounts SET balance = ? WHERE id = ?', [initialBalanceNum, firstAccount.id]);
+          } else {
+            await db.runAsync(
+              "INSERT INTO accounts (id, name, type, balance, details, color) VALUES ('main-1', 'Main Account', 'bank', ?, 'Primary Wallet', '#1e3a8a,#0f172a')",
+              [initialBalanceNum]
+            );
+          }
+        }
       }
 
       // 3. Mark onboarding as completed
@@ -141,7 +166,7 @@ export default function OnboardingModal({ visible, onFinish }: OnboardingModalPr
                 </Text>
               </View>
               {currentStep < 3 && (
-                <TouchableOpacity onPress={() => setCurrentStep(3)} hitSlop={10}>
+                <TouchableOpacity onPress={handleSkip} hitSlop={10}>
                   <Text style={styles.skipText}>Skip Setup</Text>
                 </TouchableOpacity>
               )}

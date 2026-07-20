@@ -252,7 +252,8 @@ export async function initializeDatabase(): Promise<void> {
       ('currency', 'USD'),
       ('biometrics', 'true'),
       ('username', 'Alex'),
-      ('member_since', 'June 2026');`
+      ('member_since', 'June 2026'),
+      ('has_completed_onboarding', 'true');`
     );
 
     // Seed Transactions
@@ -349,6 +350,7 @@ export async function clearAllData(): Promise<void> {
     await db.runAsync("INSERT INTO settings (key, value) VALUES ('username', 'Alex')");
     await db.runAsync("INSERT INTO settings (key, value) VALUES ('member_since', 'June 2026')");
     await db.runAsync("INSERT INTO settings (key, value) VALUES ('biometrics', 'false')");
+    await db.runAsync("INSERT INTO settings (key, value) VALUES ('has_completed_onboarding', 'false')");
   } catch (error) {
     console.error('Error clearing all database data:', error);
     throw error;
@@ -452,7 +454,18 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       }
 
       const fileUri = result.assets[0].uri;
-      jsonString = await FileSystem.readAsStringAsync(fileUri, {
+      let targetUri = fileUri;
+
+      if (fileUri.startsWith('content://')) {
+        const tempPath = `${FileSystem.cacheDirectory}temp_import_${Date.now()}.json`;
+        await FileSystem.copyAsync({
+          from: fileUri,
+          to: tempPath
+        });
+        targetUri = tempPath;
+      }
+
+      jsonString = await FileSystem.readAsStringAsync(targetUri, {
         encoding: FileSystem.EncodingType.UTF8
       });
     }
@@ -560,6 +573,9 @@ export async function importDatabaseFromJson(): Promise<boolean> {
           );
         }
       }
+      await db.runAsync(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('has_completed_onboarding', 'true')"
+      );
 
       if (Array.isArray(debts_loans)) {
         for (const dl of debts_loans) {
