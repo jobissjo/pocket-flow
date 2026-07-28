@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments, isOnboardingCompleted } from '@/services/db';
+import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments, isOnboardingCompleted, useDatabaseSubscription } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import AIAssistantModal from '@/components/ai-assistant-modal';
 import WalletDetailsModal from '@/components/wallet-details-modal';
@@ -54,7 +54,7 @@ export default function HomeDashboard() {
   const [investmentsVisible, setInvestmentsVisible] = useState(false);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       // Check onboarding state first
       const hasCompleted = await isOnboardingCompleted();
@@ -144,14 +144,15 @@ export default function HomeDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useDatabaseSubscription(loadData);
 
   useEffect(() => {
     if (isFocused) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadData();
     }
-  }, [isFocused]);
+  }, [isFocused, loadData]);
 
   if (loading) {
     return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 
-import { getDatabase } from '@/services/db';
+import { getDatabase, useDatabaseSubscription } from '@/services/db';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
 import { GlassCard } from '@/components/ui/glass-card';
@@ -34,7 +34,7 @@ export default function AnalyticsScreen() {
   const [totalIncome, setTotalIncome] = useState(0);
   const [chartData, setChartData] = useState<{ label: string; expense: number; income: number }[]>([]);
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     try {
       const db = await getDatabase();
       
@@ -75,13 +75,12 @@ export default function AnalyticsScreen() {
       }));
       setCategorySpend(formattedCategories);
 
-      // 3. Generate chart data (mocked time intervals based on database records)
-      // We group expenses by day/month depending on period to show a real graph
-      let groupFormat = '%m-%d'; // Group by day for monthly
+      // 3. Generate chart data
+      let groupFormat = '%m-%d';
       if (period === 'quarterly') {
-        groupFormat = 'Wk %W'; // Group by week for quarterly
+        groupFormat = 'Wk %W';
       } else if (period === 'yearly') {
-        groupFormat = '%b'; // Group by month name for yearly
+        groupFormat = '%b';
       }
 
       const rawChartRows = await db.getAllAsync<{ label: string; type: string; total: number }>(
@@ -95,10 +94,8 @@ export default function AnalyticsScreen() {
          ORDER BY date ASC`
       );
 
-      // Map labels to unique list and merge income/expense
       const labelMap: Record<string, { label: string; expense: number; income: number }> = {};
       
-      // Seed last 6 intervals if empty to make graph look consistent
       const intervals = period === 'monthly' ? ['06-25', '06-26', '06-27', '06-28', '06-29', '06-30'] 
                       : period === 'quarterly' ? ['Wk 22', 'Wk 23', 'Wk 24', 'Wk 25', 'Wk 26', 'Wk 27']
                       : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
@@ -119,7 +116,6 @@ export default function AnalyticsScreen() {
         }
       });
 
-      // Convert map to array and take last 6 items
       const sortedChart = Object.values(labelMap).slice(-6);
       setChartData(sortedChart);
 
@@ -128,17 +124,19 @@ export default function AnalyticsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period]);
+
+  useDatabaseSubscription(loadAnalytics);
 
   useEffect(() => {
     if (isFocused) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadAnalytics();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFocused, period]);
+  }, [isFocused, loadAnalytics]);
 
-  const maxChartValue = Math.max(...chartData.map(d => Math.max(d.expense, d.income)), 100);
+  const maxChartValue = useMemo(() => {
+    return Math.max(...chartData.map(d => Math.max(d.expense, d.income)), 100);
+  }, [chartData]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>

@@ -9,19 +9,13 @@ export default function AppTabs() {
   return (
     <NativeTabs
       tintColor={colors.tint}
-      accentColor={colors.tint}
-      selectedIconColor={colors.tint}
-      iconColor={colors.textSecondary}
+      iconColor={{ selected: colors.tint, default: colors.textSecondary }}
       backgroundColor={isDark ? '#08080C' : 'rgba(255, 255, 255, 0.92)'}
       indicatorColor={colors.backgroundElement}
       rippleColor={isDark ? 'rgba(96, 165, 250, 0.25)' : 'rgba(37, 99, 235, 0.18)'}
       labelStyle={{
         selected: { color: colors.tint, fontWeight: '700' },
         default: { color: colors.textSecondary }
-      }}
-      selectedLabelStyle={{
-        color: colors.tint,
-        fontWeight: '700'
       }}>
       
       <NativeTabs.Trigger name="index">

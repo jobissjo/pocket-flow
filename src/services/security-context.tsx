@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { AppState, Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { getSetting, setSetting } from './db';
+import { getSecureItem, saveSecureItem } from './secure-storage';
 
 interface SecurityContextType {
   isLocked: boolean;
@@ -52,8 +53,9 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     const init = async () => {
       const isSecured = await checkSecuritySetup();
-      const bioSetting = await getSetting('biometrics', 'true');
-      const isBioEnabled = bioSetting === 'true';
+      const secureBioSetting = await getSecureItem('biometrics_enabled');
+      const fallbackBioSetting = await getSetting('biometrics', 'true');
+      const isBioEnabled = secureBioSetting !== null ? secureBioSetting === 'true' : fallbackBioSetting === 'true';
 
       if (active) {
         setBiometricsEnabled(isBioEnabled);
@@ -170,6 +172,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    await saveSecureItem('biometrics_enabled', val ? 'true' : 'false');
     await setSetting('biometrics', val ? 'true' : 'false');
     setBiometricsEnabled(val);
     return true;

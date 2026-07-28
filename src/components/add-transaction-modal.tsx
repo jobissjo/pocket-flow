@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Account, Transaction } from '@/services/db';
+import { getDatabase, Account, Transaction, notifyDatabaseChanged } from '@/services/db';
+import { hapticSuccess, hapticHeavy, hapticSelection } from '@/services/haptics';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
 import DateTimePicker from '@expo/ui/community/datetime-picker';
@@ -151,109 +152,108 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
 
     try {
       const db = await getDatabase();
-      await db.runAsync('BEGIN TRANSACTION;');
 
-      // 1. Revert and delete previous transaction(s) if editing
-      if (editingTransaction) {
-        if (editingTransaction.type === 'transfer') {
-          const linkedId = editingTransaction.id.endsWith('-out')
-            ? editingTransaction.id.replace('-out', '-in')
-            : editingTransaction.id.replace('-in', '-out');
+      await db.withTransactionAsync(async () => {
+        // 1. Revert and delete previous transaction(s) if editing
+        if (editingTransaction) {
+          if (editingTransaction.type === 'transfer') {
+            const linkedId = editingTransaction.id.endsWith('-out')
+              ? editingTransaction.id.replace('-out', '-in')
+              : editingTransaction.id.replace('-in', '-out');
 
-          const linkedTx = await db.getFirstAsync<Transaction>(
-            'SELECT * FROM transactions WHERE id = ?',
-            [linkedId]
-          );
+            const linkedTx = await db.getFirstAsync<Transaction>(
+              'SELECT * FROM transactions WHERE id = ?',
+              [linkedId]
+            );
 
-          // Revert source balance
-          await db.runAsync(
-            `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-            [editingTransaction.amount, editingTransaction.account_id]
-          );
-
-          // Revert target balance
-          if (linkedTx) {
+            // Revert source balance
             await db.runAsync(
               `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-              [linkedTx.amount, linkedTx.account_id]
+              [editingTransaction.amount, editingTransaction.account_id]
             );
-            await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [linkedId]);
+
+            // Revert target balance
+            if (linkedTx) {
+              await db.runAsync(
+                `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+                [linkedTx.amount, linkedTx.account_id]
+              );
+              await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [linkedId]);
+            }
+
+            await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+          } else {
+            // Revert standard balance
+            await db.runAsync(
+              `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+              [editingTransaction.amount, editingTransaction.account_id]
+            );
+            await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+          }
+        }
+
+        const dateStr = date.toISOString();
+
+        // 2. Perform fresh insertion based on selected type
+        if (type === 'transfer') {
+          if (selectedAccount === targetAccount) {
+            throw new Error('Source and destination accounts must be different.');
           }
 
-          await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
-        } else {
-          // Revert standard balance
+          const txBaseId = 'tx-' + Date.now();
+          const fromAccount = accounts.find(a => a.id === selectedAccount);
+          const toAccount = accounts.find(a => a.id === targetAccount);
+          const fromName = fromAccount ? fromAccount.name : 'Source';
+          const toName = toAccount ? toAccount.name : 'Destination';
+
+          const customNote = note.trim() ? ` • ${note}` : '';
+          const noteOut = `Transfer to ${toName}${customNote}`;
+          const noteIn = `Transfer from ${fromName}${customNote}`;
+
+          // Insert outflow (-amount)
+          await db.runAsync(
+            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+            [txBaseId + '-out', selectedAccount, -numAmount, 'Transfer', noteOut, 'transfer', dateStr, recurring ? 1 : 0]
+          );
           await db.runAsync(
             `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-            [editingTransaction.amount, editingTransaction.account_id]
+            [numAmount, selectedAccount]
           );
-          await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+
+          // Insert inflow (+amount)
+          await db.runAsync(
+            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+            [txBaseId + '-in', targetAccount, numAmount, 'Transfer', noteIn, 'transfer', dateStr, recurring ? 1 : 0]
+          );
+          await db.runAsync(
+            `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
+            [numAmount, targetAccount]
+          );
+        } else {
+          const finalAmount = type === 'expense' ? -numAmount : numAmount;
+          const txId = 'tx-' + Date.now();
+
+          await db.runAsync(
+            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+            [txId, selectedAccount, finalAmount, selectedCategory, note, type, dateStr, recurring ? 1 : 0]
+          );
+          await db.runAsync(
+            `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
+            [finalAmount, selectedAccount]
+          );
         }
-      }
+      });
 
-      const dateStr = date.toISOString();
-
-      // 2. Perform fresh insertion based on selected type
-      if (type === 'transfer') {
-        if (selectedAccount === targetAccount) {
-          Alert.alert('Error', 'Source and destination accounts must be different.');
-          await db.runAsync('ROLLBACK;');
-          return;
-        }
-
-        const txBaseId = 'tx-' + Date.now();
-        const fromAccount = accounts.find(a => a.id === selectedAccount);
-        const toAccount = accounts.find(a => a.id === targetAccount);
-        const fromName = fromAccount ? fromAccount.name : 'Source';
-        const toName = toAccount ? toAccount.name : 'Destination';
-
-        const customNote = note.trim() ? ` • ${note}` : '';
-        const noteOut = `Transfer to ${toName}${customNote}`;
-        const noteIn = `Transfer from ${fromName}${customNote}`;
-
-        // Insert outflow (-amount)
-        await db.runAsync(
-          `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-          [txBaseId + '-out', selectedAccount, -numAmount, 'Transfer', noteOut, 'transfer', dateStr, recurring ? 1 : 0]
-        );
-        await db.runAsync(
-          `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-          [numAmount, selectedAccount]
-        );
-
-        // Insert inflow (+amount)
-        await db.runAsync(
-          `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-          [txBaseId + '-in', targetAccount, numAmount, 'Transfer', noteIn, 'transfer', dateStr, recurring ? 1 : 0]
-        );
-        await db.runAsync(
-          `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
-          [numAmount, targetAccount]
-        );
-      } else {
-        const finalAmount = type === 'expense' ? -numAmount : numAmount;
-        const txId = 'tx-' + Date.now();
-
-        await db.runAsync(
-          `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-          [txId, selectedAccount, finalAmount, selectedCategory, note, type, dateStr, recurring ? 1 : 0]
-        );
-        await db.runAsync(
-          `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
-          [finalAmount, selectedAccount]
-        );
-      }
-
-      await db.runAsync('COMMIT;');
-
+      notifyDatabaseChanged();
+      hapticSuccess();
       if (onSaveSuccess) onSaveSuccess();
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving transaction:', error);
-      Alert.alert('Error', 'Failed to save transaction.');
+      Alert.alert('Error', error.message || 'Failed to save transaction.');
     }
   };
 
@@ -276,45 +276,45 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
           onPress: async () => {
             try {
               const db = await getDatabase();
-              await db.runAsync('BEGIN TRANSACTION;');
+              await db.withTransactionAsync(async () => {
+                if (isTransfer) {
+                  const linkedId = editingTransaction.id.endsWith('-out')
+                    ? editingTransaction.id.replace('-out', '-in')
+                    : editingTransaction.id.replace('-in', '-out');
 
-              if (isTransfer) {
-                const linkedId = editingTransaction.id.endsWith('-out')
-                  ? editingTransaction.id.replace('-out', '-in')
-                  : editingTransaction.id.replace('-in', '-out');
+                  const linkedTx = await db.getFirstAsync<Transaction>(
+                    'SELECT * FROM transactions WHERE id = ?',
+                    [linkedId]
+                  );
 
-                const linkedTx = await db.getFirstAsync<Transaction>(
-                  'SELECT * FROM transactions WHERE id = ?',
-                  [linkedId]
-                );
-
-                // Revert source balance
-                await db.runAsync(
-                  `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-                  [editingTransaction.amount, editingTransaction.account_id]
-                );
-
-                // Revert target balance
-                if (linkedTx) {
+                  // Revert source balance
                   await db.runAsync(
                     `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-                    [linkedTx.amount, linkedTx.account_id]
+                    [editingTransaction.amount, editingTransaction.account_id]
                   );
-                  await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [linkedId]);
+
+                  // Revert target balance
+                  if (linkedTx) {
+                    await db.runAsync(
+                      `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+                      [linkedTx.amount, linkedTx.account_id]
+                    );
+                    await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [linkedId]);
+                  }
+
+                  await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
+                } else {
+                  // Revert standard balance
+                  await db.runAsync(
+                    `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
+                    [editingTransaction.amount, editingTransaction.account_id]
+                  );
+                  await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
                 }
+              });
 
-                await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
-              } else {
-                // Revert standard balance
-                await db.runAsync(
-                  `UPDATE accounts SET balance = balance - ? WHERE id = ?;`,
-                  [editingTransaction.amount, editingTransaction.account_id]
-                );
-                await db.runAsync(`DELETE FROM transactions WHERE id = ?;`, [editingTransaction.id]);
-              }
-
-              await db.runAsync('COMMIT;');
-
+              notifyDatabaseChanged();
+              hapticHeavy();
               if (onSaveSuccess) onSaveSuccess();
               onClose();
             } catch (error) {

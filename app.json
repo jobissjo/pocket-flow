@@ -47,7 +47,8 @@
         {
           "faceIDPermission": "Allow PocketFlow to use Face ID for securing your local data vault."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

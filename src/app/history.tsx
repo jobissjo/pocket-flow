@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Transaction } from '@/services/db';
+import { getDatabase, Transaction, useDatabaseSubscription } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
@@ -37,7 +37,7 @@ export default function HistoryScreen() {
   // List of unique categories for filters
   const categories = ['Food', 'Transport', 'Shopping', 'Grocery', 'Housing', 'Salary', 'Transfer', 'Services', 'Electronics', 'Digital', 'Dining'];
 
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     try {
       setLoading(true);
       const db = await getDatabase();
@@ -69,21 +69,20 @@ export default function HistoryScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery, activeFilter, selectedCategory]);
+
+  useDatabaseSubscription(loadTransactions);
 
   useEffect(() => {
     if (isFocused) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadTransactions();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFocused, searchQuery, activeFilter, selectedCategory]);
+  }, [isFocused, loadTransactions]);
 
   // Helper to group transactions by relative dates
-  const getGroupedTransactions = () => {
+  const grouped = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
     const todayStr = new Date().toDateString();
-    // eslint-disable-next-line react-hooks/purity
     const yesterdayStr = new Date(Date.now() - 86400000).toDateString();
 
     transactions.forEach(tx => {
@@ -106,10 +105,9 @@ export default function HistoryScreen() {
     });
 
     return groups;
-  };
+  }, [transactions]);
 
-  const grouped = getGroupedTransactions();
-  const groupKeys = Object.keys(grouped);
+  const groupKeys = useMemo(() => Object.keys(grouped), [grouped]);
 
   // Calculate sum for group
   const getGroupTotal = (txs: Transaction[]) => {

@@ -1,15 +1,16 @@
 import React from 'react';
-import { StyleSheet, Platform, type ViewProps, TouchableOpacity, type GestureResponderEvent, View } from 'react-native';
+import { StyleSheet, Platform, type TouchableOpacityProps, TouchableOpacity, type GestureResponderEvent, View } from 'react-native';
 import { GlassView } from 'expo-glass-effect';
 import { useTheme } from '@/services/theme-context';
+import { hapticLight } from '@/services/haptics';
 
-export type GlassCardProps = ViewProps & {
+export type GlassCardProps = TouchableOpacityProps & {
   children?: React.ReactNode;
   onPress?: (event: GestureResponderEvent) => void;
   activeOpacity?: number;
 };
 
-export function GlassCard({ children, style, onPress, activeOpacity, ...props }: GlassCardProps) {
+export function GlassCard({ children, style, onPress, activeOpacity, accessibilityRole, ...props }: GlassCardProps) {
   const { isDark } = useTheme();
 
   const cardStyle = [
@@ -18,13 +19,19 @@ export function GlassCard({ children, style, onPress, activeOpacity, ...props }:
     style,
   ];
 
+  const handlePress = (e: GestureResponderEvent) => {
+    hapticLight();
+    if (onPress) onPress(e);
+  };
+
   if (Platform.OS === 'ios') {
     if (onPress) {
       return (
         <TouchableOpacity 
-          onPress={onPress} 
+          onPress={handlePress} 
           activeOpacity={activeOpacity ?? 0.85} 
           style={cardStyle} 
+          accessibilityRole={accessibilityRole || 'button'}
           {...props}
         >
           <GlassView
@@ -43,6 +50,7 @@ export function GlassCard({ children, style, onPress, activeOpacity, ...props }:
         glassEffectStyle="clear"
         colorScheme={isDark ? 'dark' : 'light'}
         style={cardStyle}
+        accessibilityRole={accessibilityRole || 'summary'}
         {...props}
       >
         {children}
@@ -54,9 +62,10 @@ export function GlassCard({ children, style, onPress, activeOpacity, ...props }:
   if (onPress) {
     return (
       <TouchableOpacity 
-        onPress={onPress} 
+        onPress={handlePress} 
         activeOpacity={activeOpacity ?? 0.85} 
         style={cardStyle} 
+        accessibilityRole={accessibilityRole || 'button'}
         {...props}
       >
         {children}
@@ -67,6 +76,7 @@ export function GlassCard({ children, style, onPress, activeOpacity, ...props }:
   return (
     <View
       style={cardStyle}
+      accessibilityRole={accessibilityRole || 'summary'}
       {...props}
     >
       {children}

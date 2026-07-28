@@ -1289,6 +1289,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
+  sectionLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#60A5FA',
+  },
   emptyStateCard: {
     alignItems: 'center',
     justifyContent: 'center',

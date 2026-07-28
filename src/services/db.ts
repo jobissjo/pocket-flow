@@ -1,8 +1,45 @@
+import { useEffect } from 'react';
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+
+type DBChangeListener = () => void;
+const dbChangeListeners = new Set<DBChangeListener>();
+
+export function subscribeToDatabaseChanges(listener: DBChangeListener): () => void {
+  dbChangeListeners.add(listener);
+  return () => {
+    dbChangeListeners.delete(listener);
+  };
+}
+
+export function notifyDatabaseChanged(): void {
+  dbChangeListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (err) {
+      console.error('Error executing DB listener:', err);
+    }
+  });
+}
+
+export function useDatabaseSubscription(callback: () => void, deps: React.DependencyList = []) {
+  useEffect(() => {
+    const unsubscribe = subscribeToDatabaseChanges(callback);
+    return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
+export async function executeAtomicTransaction(action: (db: SQLite.SQLiteDatabase) => Promise<void>): Promise<void> {
+  const db = await getDatabase();
+  await db.withTransactionAsync(async () => {
+    await action(db);
+  });
+  notifyDatabaseChanged();
+}
 
 export interface Account {
   id: string;
@@ -217,6 +254,20 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync('ALTER TABLE accounts ADD COLUMN due_day INTEGER DEFAULT 0;');
   } catch (_) {}
 
+  // Performance Indexes (non-destructive)
+  try {
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON transactions(account_id, date);
+      CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+      CREATE INDEX IF NOT EXISTS idx_subscriptions_next_date ON subscriptions(next_billing_date);
+      CREATE INDEX IF NOT EXISTS idx_debts_status ON debts_loans(status);
+      CREATE INDEX IF NOT EXISTS idx_sips_next_date ON sips(next_date);
+      CREATE INDEX IF NOT EXISTS idx_investments_account ON investments(account_id);
+    `);
+  } catch (error) {
+    console.error('Error creating database indexes:', error);
+  }
+
   // Seed data if empty
   const accountsCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM accounts');
   if (accountsCount && accountsCount.count === 0) {
@@ -299,6 +350,7 @@ export async function setSetting(key: string, value: string): Promise<void> {
   try {
     const db = await getDatabase();
     await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error(`Error setting ${key} to ${value}:`, error);
   }
@@ -351,6 +403,8 @@ export async function clearAllData(): Promise<void> {
     await db.runAsync("INSERT INTO settings (key, value) VALUES ('member_since', 'June 2026')");
     await db.runAsync("INSERT INTO settings (key, value) VALUES ('biometrics', 'false')");
     await db.runAsync("INSERT INTO settings (key, value) VALUES ('has_completed_onboarding', 'false')");
+
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error clearing all database data:', error);
     throw error;
@@ -653,6 +707,7 @@ export async function importDatabaseFromJson(): Promise<boolean> {
       await db.execAsync('PRAGMA foreign_keys = ON;');
     });
 
+    notifyDatabaseChanged();
     return true;
   } catch (error) {
     console.error('Error importing database:', error);
@@ -685,6 +740,7 @@ export async function addDebtLoan(
        VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
       [id, personName, amount, description, dueDate, createdAt]
     );
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error adding debt/loan:', error);
     throw error;
@@ -695,6 +751,7 @@ export async function settleDebtLoan(id: string): Promise<void> {
   try {
     const db = await getDatabase();
     await db.runAsync("UPDATE debts_loans SET status = 'settled' WHERE id = ?", [id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error settling debt/loan:', error);
     throw error;
@@ -705,6 +762,7 @@ export async function deleteDebtLoan(id: string): Promise<void> {
   try {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM debts_loans WHERE id = ?', [id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error deleting debt/loan:', error);
     throw error;
@@ -738,6 +796,7 @@ export async function addSubscription(
        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?);`,
       [id, name, amount, category, billingCycle, nextBillingDate, accountId, createdAt]
     );
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error adding subscription:', error);
     throw error;
@@ -748,6 +807,7 @@ export async function pauseSubscription(id: string, status: 'active' | 'paused')
   try {
     const db = await getDatabase();
     await db.runAsync('UPDATE subscriptions SET status = ? WHERE id = ?;', [status, id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error changing subscription status:', error);
     throw error;
@@ -758,6 +818,7 @@ export async function deleteSubscription(id: string): Promise<void> {
   try {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM subscriptions WHERE id = ?;', [id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error deleting subscription:', error);
     throw error;
@@ -817,6 +878,7 @@ export async function autoApplySubscriptions(): Promise<void> {
         );
       }
     });
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error auto-applying subscriptions:', error);
   }
@@ -869,6 +931,7 @@ export async function addInvestment(
         );
       }
     });
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error adding investment:', error);
     throw error;
@@ -879,6 +942,7 @@ export async function updateInvestmentPrice(id: string, currentPrice: number): P
   try {
     const db = await getDatabase();
     await db.runAsync('UPDATE investments SET current_price = ? WHERE id = ?;', [currentPrice, id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error updating current price:', error);
     throw error;
@@ -921,6 +985,7 @@ export async function buyMoreInvestment(
         [cost, accountId]
       );
     });
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error buying more investment:', error);
     throw error;
@@ -959,6 +1024,7 @@ export async function sellInvestment(
         [gain, accountId]
       );
     });
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error selling investment:', error);
     throw error;
@@ -992,6 +1058,7 @@ export async function addSIP(
        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?);`,
       [id, name, investmentId, amount, frequency, nextDate, accountId, createdAt]
     );
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error adding SIP:', error);
     throw error;
@@ -1002,6 +1069,7 @@ export async function pauseSIP(id: string, status: 'active' | 'paused'): Promise
   try {
     const db = await getDatabase();
     await db.runAsync('UPDATE sips SET status = ? WHERE id = ?;', [status, id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error pausing/resuming SIP:', error);
     throw error;
@@ -1012,6 +1080,7 @@ export async function deleteSIP(id: string): Promise<void> {
   try {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM sips WHERE id = ?;', [id]);
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error deleting SIP:', error);
     throw error;
@@ -1092,6 +1161,7 @@ export async function autoApplySIPs(): Promise<void> {
         );
       }
     });
+    notifyDatabaseChanged();
   } catch (error) {
     console.error('Error auto-applying SIPs:', error);
   }
