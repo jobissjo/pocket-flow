@@ -17,6 +17,7 @@ import { getDatabase, Account, Subscription, getSubscriptions, addSubscription, 
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
 import { GlassCard } from '@/components/ui/glass-card';
+import { rescheduleAllReminders } from '@/services/notifications';
 
 interface SubscriptionsModalProps {
   visible: boolean;
@@ -47,6 +48,7 @@ export default function SubscriptionsModal({ visible, onClose }: SubscriptionsMo
       setLoading(true);
       const subList = await getSubscriptions();
       setSubs(subList);
+      await rescheduleAllReminders();
 
       const db = await getDatabase();
       const accList = await db.getAllAsync<Account>('SELECT * FROM accounts');

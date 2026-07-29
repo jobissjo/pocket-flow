@@ -14,13 +14,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments, isOnboardingCompleted, useDatabaseSubscription } from '@/services/db';
+import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments, isOnboardingCompleted, useDatabaseSubscription, getCategoryBudgetUtilization, getDueRecurringItems, confirmAndPostRecurringItem, DueRecurringItem } from '@/services/db';
 import AddTransactionModal from '@/components/add-transaction-modal';
 import AIAssistantModal from '@/components/ai-assistant-modal';
 import WalletDetailsModal from '@/components/wallet-details-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
 import InvestmentsModal from '@/components/investments-modal';
+import BudgetsModal from '@/components/budgets-modal';
 import OnboardingModal from '@/components/onboarding-modal';
+import { rescheduleAllReminders } from '@/services/notifications';
 
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
@@ -42,6 +44,7 @@ export default function HomeDashboard() {
   const [username, setUsername] = useState('Alex');
   const [portfolioVal, setPortfolioVal] = useState(0);
   const [avatar, setAvatar] = useState('👤');
+  const [pendingDueItems, setPendingDueItems] = useState<DueRecurringItem[]>([]);
 
   // Modal Visibility States
   const [addTxVisible, setAddTxVisible] = useState(false);
@@ -52,41 +55,41 @@ export default function HomeDashboard() {
   const [subsVisible, setSubsVisible] = useState(false);
   const [upcomingBills, setUpcomingBills] = useState<Subscription[]>([]);
   const [investmentsVisible, setInvestmentsVisible] = useState(false);
+  const [budgetsModalVisible, setBudgetsModalVisible] = useState(false);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      // Check onboarding state first
-      const hasCompleted = await isOnboardingCompleted();
-      if (!hasCompleted) {
+      const isCompleted = await isOnboardingCompleted();
+      if (!isCompleted) {
         setOnboardingVisible(true);
       }
 
-      // First auto-apply past-due recurring bills & SIPs
       await autoApplySubscriptions();
       await autoApplySIPs();
+      await rescheduleAllReminders();
 
       const db = await getDatabase();
 
-      // Load username setting
-      const name = await getSetting('username', 'Alex');
-      setUsername(name);
+      // 1. Fetch total balance across all accounts
+      const accRows = await db.getAllAsync<{ balance: number }>('SELECT balance FROM accounts');
+      const total = accRows.reduce((acc, row) => acc + row.balance, 0);
+      setTotalBalance(total);
 
-      const avatarVal = await getSetting('user_avatar', '👤');
-      setAvatar(avatarVal);
+      // 2. Compute monthly income and expenses
+      const now = new Date();
+      const firstDayStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      // 1. Fetch total balance
-      const balanceRow = await db.getFirstAsync<{ total: number }>('SELECT COALESCE(SUM(balance), 0) as total FROM accounts');
-      setTotalBalance(balanceRow?.total || 0);
-
-      // 2. Fetch income and expense sums
       const incomeRow = await db.getFirstAsync<{ total: number }>(
-        "SELECT SUM(amount) as total FROM transactions WHERE type='income'"
-      );
-      const expenseRow = await db.getFirstAsync<{ total: number }>(
-        "SELECT ABS(SUM(amount)) as total FROM transactions WHERE type='expense'"
+        `SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND date >= ?`,
+        [firstDayStr]
       );
       setIncomeSum(incomeRow?.total || 0);
+
+      const expenseRow = await db.getFirstAsync<{ total: number }>(
+        `SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND date >= ?`,
+        [firstDayStr]
+      );
       setExpenseSum(expenseRow?.total || 0);
 
       // 3. Fetch recent transactions
@@ -95,29 +98,8 @@ export default function HomeDashboard() {
       );
       setRecentTransactions(txs);
 
-      // 4. Compute budget utilization
-      const budgetRows = await db.getAllAsync<{ category: string; spent: number }>(
-        `SELECT category, ABS(SUM(amount)) as spent 
-         FROM transactions 
-         WHERE type = 'expense' 
-         AND category IN ('Food', 'Transport', 'Shopping')
-         GROUP BY category`
-      );
-
-      const limits: Record<string, number> = {
-        Food: 600,
-        Transport: 200,
-        Shopping: 300
-      };
-
-      const budgetList = ['Food', 'Transport', 'Shopping'].map(cat => {
-        const row = budgetRows.find(r => r.category.toLowerCase() === cat.toLowerCase());
-        return {
-          category: cat,
-          spent: row ? row.spent : 0,
-          limit: limits[cat]
-        };
-      });
+      // 4. Compute dynamic budget utilization
+      const budgetList = await getCategoryBudgetUtilization();
       setBudgets(budgetList);
 
       // 5. Fetch upcoming bills (next 30 days)
@@ -139,12 +121,25 @@ export default function HomeDashboard() {
       const val = invs.reduce((sum, inv) => sum + (inv.shares * inv.current_price), 0);
       setPortfolioVal(val);
 
+      // Load due recurring items requiring 1-tap confirmation
+      const dueList = await getDueRecurringItems();
+      setPendingDueItems(dueList);
+
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleConfirmRecurringPayment = async (item: DueRecurringItem) => {
+    try {
+      await confirmAndPostRecurringItem(item);
+      await loadData();
+    } catch (err) {
+      console.error('Error confirming payment:', err);
+    }
+  };
 
   useDatabaseSubscription(loadData);
 
@@ -252,6 +247,40 @@ export default function HomeDashboard() {
           </View>
         </GlassCard>
 
+        {/* Pending Due Payments Banner */}
+        {pendingDueItems.length > 0 && (
+          <GlassCard style={{ marginBottom: 16, backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <MaterialIcons name="notifications-active" size={18} color="#ef4444" />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#ef4444', textTransform: 'uppercase' }}>
+                    {pendingDueItems.length} Due {pendingDueItems.length === 1 ? 'Payment' : 'Payments'}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? '#ffffff' : '#0f172a' }}>
+                  {pendingDueItems[0].name} ({formatAmount(pendingDueItems[0].amount)})
+                </Text>
+                <Text style={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', marginTop: 2 }}>
+                  Due {pendingDueItems[0].dueDate} • Tap to auto-post
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#ef4444',
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: 14,
+                }}
+                onPress={() => handleConfirmRecurringPayment(pendingDueItems[0])}
+              >
+                <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }}>Pay & Post</Text>
+              </TouchableOpacity>
+            </View>
+          </GlassCard>
+        )}
+
         {/* Balance Card */}
         <GlassCard>
           <View style={styles.balanceHeader}>
@@ -351,8 +380,8 @@ export default function HomeDashboard() {
         {/* Budgets Progress */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Budgets</Text>
-          <TouchableOpacity onPress={() => router.push('/analytics')}>
-            <Text style={styles.sectionLink}>View limits</Text>
+          <TouchableOpacity onPress={() => setBudgetsModalVisible(true)}>
+            <Text style={styles.sectionLink}>Manage limits</Text>
           </TouchableOpacity>
         </View>
 
@@ -525,6 +554,14 @@ export default function HomeDashboard() {
           setInvestmentsVisible(false);
           loadData();
         }} 
+      />
+
+      <BudgetsModal
+        visible={budgetsModalVisible}
+        onClose={() => {
+          setBudgetsModalVisible(false);
+          loadData();
+        }}
       />
 
       <OnboardingModal

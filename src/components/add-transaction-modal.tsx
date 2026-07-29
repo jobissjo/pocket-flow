@@ -12,7 +12,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Dimensions,
-  Modal
+  Modal,
+  Image
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -21,6 +22,7 @@ import { hapticSuccess, hapticHeavy, hapticSelection } from '@/services/haptics'
 import { useCurrency } from '@/services/currency';
 import { useTheme } from '@/services/theme-context';
 import DateTimePicker from '@expo/ui/community/datetime-picker';
+import { pickReceiptFromGallery, takeReceiptPhotoFromCamera } from '@/services/receipts';
 
 const { width } = Dimensions.get('window');
 
@@ -46,6 +48,17 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+
+  const handlePickGallery = async () => {
+    const uri = await pickReceiptFromGallery();
+    if (uri) setImageUri(uri);
+  };
+
+  const handleTakeCamera = async () => {
+    const uri = await takeReceiptPhotoFromCamera();
+    if (uri) setImageUri(uri);
+  };
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
@@ -120,6 +133,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
         setSelectedCategory(editingTransaction.category);
         setSelectedAccount(editingTransaction.account_id);
         setDate(new Date(editingTransaction.date));
+        setImageUri(editingTransaction.image_uri || null);
       } else {
         setType(initialType);
         setAmount('');
@@ -127,6 +141,7 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
         setRecurring(false);
         setSelectedCategory(initialType === 'transfer' ? 'Transfer' : 'Food');
         setDate(new Date());
+        setImageUri(null);
       }
       setShowDatePicker(false);
       loadData();
@@ -236,9 +251,9 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
           const txId = 'tx-' + Date.now();
 
           await db.runAsync(
-            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-            [txId, selectedAccount, finalAmount, selectedCategory, note, type, dateStr, recurring ? 1 : 0]
+            `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring, image_uri)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            [txId, selectedAccount, finalAmount, selectedCategory, note, type, dateStr, recurring ? 1 : 0, imageUri || null]
           );
           await db.runAsync(
             `UPDATE accounts SET balance = balance + ? WHERE id = ?;`,
@@ -629,6 +644,31 @@ export default function AddTransactionModal({ visible, onClose, initialType, onS
                   onChangeText={setNote}
                 />
 
+                {/* Receipt Photo Attachment */}
+                <View style={[styles.receiptSection, { borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)' }]}>
+                  <Text style={[styles.fieldLabel, !isDark && styles.textSecondaryLight]}>Receipt / Invoice Photo</Text>
+                  
+                  {imageUri ? (
+                    <View style={styles.receiptPreviewContainer}>
+                      <Image source={{ uri: imageUri }} style={styles.receiptPreviewImage} resizeMode="cover" />
+                      <TouchableOpacity style={styles.removeReceiptBtn} onPress={() => setImageUri(null)}>
+                        <MaterialIcons name="cancel" size={24} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.receiptActionRow}>
+                      <TouchableOpacity style={[styles.receiptBtn, !isDark && styles.receiptBtnLight]} onPress={handleTakeCamera}>
+                        <MaterialIcons name="photo-camera" size={20} color={isDark ? '#a6c8ff' : '#208aef'} />
+                        <Text style={[styles.receiptBtnText, !isDark && styles.textLight]}>Take Photo</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.receiptBtn, !isDark && styles.receiptBtnLight]} onPress={handlePickGallery}>
+                        <MaterialIcons name="photo-library" size={20} color={isDark ? '#a6c8ff' : '#208aef'} />
+                        <Text style={[styles.receiptBtnText, !isDark && styles.textLight]}>Gallery</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
                 {/* Save Button */}
                 <TouchableOpacity style={[styles.saveBtn, !isDark && styles.saveBtnLight]} onPress={handleSave}>
                   <Text style={[styles.saveBtnText, !isDark && styles.saveBtnTextLight]}>
@@ -987,5 +1027,57 @@ const styles = StyleSheet.create({
   inlinePickerContainerLight: {
     backgroundColor: 'rgba(0, 0, 0, 0.01)',
     borderColor: 'rgba(0, 0, 0, 0.03)',
+  },
+  receiptSection: {
+    marginTop: 12,
+    marginBottom: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+  },
+  receiptActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  receiptBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 14,
+    paddingVertical: 12,
+  },
+  receiptBtnLight: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+  },
+  receiptBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  receiptPreviewContainer: {
+    position: 'relative',
+    marginTop: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+    height: 160,
+    width: '100%',
+    backgroundColor: '#000',
+  },
+  receiptPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removeReceiptBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 16,
   }
 });

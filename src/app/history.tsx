@@ -7,7 +7,9 @@ import {
   TextInput,
   TouchableOpacity, 
   ActivityIndicator,
-  Platform
+  Platform,
+  Image,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
@@ -33,6 +35,7 @@ export default function HistoryScreen() {
   // Modal visibility state
   const [addTxVisible, setAddTxVisible] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [viewReceiptUri, setViewReceiptUri] = useState<string | null>(null);
 
   // List of unique categories for filters
   const categories = ['Food', 'Transport', 'Shopping', 'Grocery', 'Housing', 'Salary', 'Transfer', 'Services', 'Electronics', 'Digital', 'Dining'];
@@ -311,13 +314,26 @@ export default function HistoryScreen() {
                           <Text style={[styles.txAmount, isExpense ? (isDark ? styles.expenseText : styles.expenseTextLight) : (isDark ? styles.incomeText : styles.incomeTextLight)]}>
                             {formattedAmt}
                           </Text>
-                          <View style={[
-                            styles.catBadge, 
-                            { backgroundColor: isExpense ? (isDark ? 'rgba(255, 180, 171, 0.1)' : 'rgba(186, 26, 26, 0.08)') : (isDark ? 'rgba(166, 200, 255, 0.1)' : 'rgba(32, 138, 239, 0.08)') }
-                          ]}>
-                            <Text style={[styles.catBadgeText, isExpense ? (isDark ? styles.expenseBadgeText : styles.expenseBadgeTextLight) : (isDark ? styles.incomeBadgeText : styles.incomeBadgeTextLight)]}>
-                              {tx.category}
-                            </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {tx.image_uri && (
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  setViewReceiptUri(tx.image_uri || null);
+                                }}
+                                style={{ padding: 2 }}
+                              >
+                                <MaterialIcons name="receipt-long" size={18} color="#3b82f6" />
+                              </TouchableOpacity>
+                            )}
+                            <View style={[
+                              styles.catBadge, 
+                              { backgroundColor: isExpense ? (isDark ? 'rgba(255, 180, 171, 0.1)' : 'rgba(186, 26, 26, 0.08)') : (isDark ? 'rgba(166, 200, 255, 0.1)' : 'rgba(32, 138, 239, 0.08)') }
+                            ]}>
+                              <Text style={[styles.catBadgeText, isExpense ? (isDark ? styles.expenseBadgeText : styles.expenseBadgeTextLight) : (isDark ? styles.incomeBadgeText : styles.incomeBadgeTextLight)]}>
+                                {tx.category}
+                              </Text>
+                            </View>
                           </View>
                         </View>
                       </TouchableOpacity>
@@ -330,8 +346,20 @@ export default function HistoryScreen() {
         )}
         
         {/* Extra spacing bottom to clear the FAB and tab bar */}
-        <View style={{ height: 120 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Receipt Photo Lightbox Modal */}
+      <Modal visible={!!viewReceiptUri} animationType="fade" transparent onRequestClose={() => setViewReceiptUri(null)}>
+        <View style={styles.lightboxOverlay}>
+          <TouchableOpacity style={styles.lightboxCloseBtn} onPress={() => setViewReceiptUri(null)}>
+            <MaterialIcons name="close" size={28} color="#ffffff" />
+          </TouchableOpacity>
+          {viewReceiptUri && (
+            <Image source={{ uri: viewReceiptUri }} style={styles.lightboxImage} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
 
       {/* Floating Action Button */}
       <TouchableOpacity 
@@ -572,11 +600,11 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: Platform.OS === 'web' ? 100 : 30,
+    bottom: Platform.OS === 'web' ? 100 : 88,
     right: 20,
     width: 56,
     height: 56,
-    borderRadius: 18,
+    borderRadius: 28,
     backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
@@ -584,8 +612,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
-    elevation: 8,
-    zIndex: 100,
+    elevation: 10,
+    zIndex: 999,
   },
   searchHeaderLight: {
     backgroundColor: 'transparent',
@@ -614,6 +642,27 @@ const styles = StyleSheet.create({
   },
   txBorderLight: {
     borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  lightboxCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 30,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 20,
+  },
+  lightboxImage: {
+    width: '100%',
+    height: '80%',
+    borderRadius: 16,
   },
   txIconContainerLight: {
     backgroundColor: 'rgba(0, 0, 0, 0.04)',

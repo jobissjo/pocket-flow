@@ -24,6 +24,7 @@ import { GlassCard } from '@/components/ui/glass-card';
 import ReportModal from '@/components/report-modal';
 import SubscriptionsModal from '@/components/subscriptions-modal';
 import InvestmentsModal from '@/components/investments-modal';
+import { rescheduleAllReminders, syncDailyLoggingReminder } from '@/services/notifications';
 
 
 
@@ -57,6 +58,8 @@ export default function ProfileScreen() {
   const [memberSince, setMemberSince] = useState('June 2026');
   const [avatar, setAvatar] = useState('👤');
   const [editAvatar, setEditAvatar] = useState('👤');
+  const [billRemindersEnabled, setBillRemindersEnabled] = useState(true);
+  const [dailyReminderEnabled, setDailyReminderEnabled] = useState(false);
 
   // Modal visibility states
   const [editProfileVisible, setEditProfileVisible] = useState(false);
@@ -105,6 +108,12 @@ export default function ProfileScreen() {
       const avatarVal = await getSetting('user_avatar', '👤');
       setAvatar(avatarVal);
 
+      const billRem = await getSetting('bill_reminders_enabled', 'true');
+      setBillRemindersEnabled(billRem === 'true');
+
+      const dailyRem = await getSetting('daily_reminder_enabled', 'false');
+      setDailyReminderEnabled(dailyRem === 'true');
+
     } catch (error) {
       console.error('Error loading profile data:', error);
     } finally {
@@ -118,6 +127,18 @@ export default function ProfileScreen() {
       loadProfileData();
     }
   }, [isFocused]);
+
+  const handleToggleBillReminders = async (val: boolean) => {
+    setBillRemindersEnabled(val);
+    await setSetting('bill_reminders_enabled', val ? 'true' : 'false');
+    await rescheduleAllReminders();
+  };
+
+  const handleToggleDailyReminder = async (val: boolean) => {
+    setDailyReminderEnabled(val);
+    await setSetting('daily_reminder_enabled', val ? 'true' : 'false');
+    await syncDailyLoggingReminder();
+  };
 
   const handleToggleBiometrics = async (val: boolean) => {
     if (!hasSecurity && val) {
@@ -451,6 +472,48 @@ export default function ProfileScreen() {
               onValueChange={handleToggleBiometrics}
               trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
               thumbColor={biometricsEnabled ? '#ffffff' : '#8e9192'}
+            />
+          </View>
+        </GlassCard>
+
+        {/* Notifications: Bill & SIP Reminders */}
+        <GlassCard>
+          <View style={styles.settingsRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
+                <MaterialIcons name="notifications-active" size={22} color="#a6c8ff" />
+              </View>
+              <View>
+                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Bill & Subscription Alerts</Text>
+                <Text style={styles.settingDesc}>Reminders 1 day before due date</Text>
+              </View>
+            </View>
+            <Switch
+              value={billRemindersEnabled}
+              onValueChange={handleToggleBillReminders}
+              trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
+              thumbColor={billRemindersEnabled ? '#ffffff' : '#8e9192'}
+            />
+          </View>
+        </GlassCard>
+
+        {/* Notifications: Daily Expense Logger */}
+        <GlassCard>
+          <View style={styles.settingsRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
+                <MaterialIcons name="alarm" size={22} color="#a6c8ff" />
+              </View>
+              <View>
+                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Daily Expense Reminder</Text>
+                <Text style={styles.settingDesc}>Check-in notification at 8:00 PM</Text>
+              </View>
+            </View>
+            <Switch
+              value={dailyReminderEnabled}
+              onValueChange={handleToggleDailyReminder}
+              trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
+              thumbColor={dailyReminderEnabled ? '#ffffff' : '#8e9192'}
             />
           </View>
         </GlassCard>

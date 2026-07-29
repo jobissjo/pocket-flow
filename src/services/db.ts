@@ -62,6 +62,7 @@ export interface Transaction {
   type: 'income' | 'expense' | 'transfer';
   date: string; // ISO String
   recurring: number; // 0 or 1
+  image_uri?: string;
 }
 
 export interface SavingsGoal {
@@ -115,6 +116,13 @@ export interface SIP {
   next_date: string; // YYYY-MM-DD
   account_id: string;
   status: 'active' | 'paused';
+  created_at: string;
+}
+
+export interface Budget {
+  id: string;
+  category: string;
+  monthly_limit: number;
   created_at: string;
 }
 
@@ -241,6 +249,13 @@ export async function initializeDatabase(): Promise<void> {
       status TEXT CHECK(status IN ('active', 'paused')) NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      category TEXT UNIQUE NOT NULL,
+      monthly_limit REAL NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Migrate existing tables
@@ -252,6 +267,9 @@ export async function initializeDatabase(): Promise<void> {
   } catch (_) {}
   try {
     await db.execAsync('ALTER TABLE accounts ADD COLUMN due_day INTEGER DEFAULT 0;');
+  } catch (_) {}
+  try {
+    await db.execAsync('ALTER TABLE transactions ADD COLUMN image_uri TEXT;');
   } catch (_) {}
 
   // Performance Indexes (non-destructive)
@@ -332,6 +350,27 @@ export async function initializeDatabase(): Promise<void> {
     );
     
     console.log('Seeding completed successfully.');
+  }
+
+  // Seed default budgets if empty
+  try {
+    const budgetCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM budgets');
+    if (budgetCount && budgetCount.count === 0) {
+      const defaults = [
+        { category: 'Food', limit: 600 },
+        { category: 'Transport', limit: 200 },
+        { category: 'Shopping', limit: 300 },
+        { category: 'Utilities', limit: 400 },
+      ];
+      for (const d of defaults) {
+        await db.runAsync(
+          'INSERT OR IGNORE INTO budgets (id, category, monthly_limit, created_at) VALUES (?, ?, ?, ?);',
+          [`budget-${d.category.toLowerCase()}`, d.category, d.limit, new Date().toISOString()]
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error seeding budgets:', err);
   }
 }
 
@@ -1166,4 +1205,200 @@ export async function autoApplySIPs(): Promise<void> {
     console.error('Error auto-applying SIPs:', error);
   }
 }
+
+// ----------------------------------------------------
+// Budget Management Services
+// ----------------------------------------------------
+
+export async function getBudgets(): Promise<Budget[]> {
+  const db = await getDatabase();
+  return await db.getAllAsync<Budget>('SELECT * FROM budgets ORDER BY category ASC');
+}
+
+export async function upsertBudget(category: string, monthlyLimit: number): Promise<void> {
+  const db = await getDatabase();
+  const trimmedCat = category.trim();
+  if (!trimmedCat || monthlyLimit <= 0) return;
+
+  const existing = await db.getFirstAsync<Budget>('SELECT * FROM budgets WHERE LOWER(category) = LOWER(?)', [trimmedCat]);
+
+  if (existing) {
+    await db.runAsync('UPDATE budgets SET monthly_limit = ? WHERE id = ?;', [monthlyLimit, existing.id]);
+  } else {
+    const id = `budget-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    await db.runAsync(
+      'INSERT INTO budgets (id, category, monthly_limit, created_at) VALUES (?, ?, ?, ?);',
+      [id, trimmedCat, monthlyLimit, new Date().toISOString()]
+    );
+  }
+  notifyDatabaseChanged();
+}
+
+export async function deleteBudget(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM budgets WHERE id = ?;', [id]);
+  notifyDatabaseChanged();
+}
+
+export async function getCategoryBudgetUtilization(): Promise<{ category: string; spent: number; limit: number }[]> {
+  const db = await getDatabase();
+  const budgets = await getBudgets();
+  if (budgets.length === 0) return [];
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+  const spentRows = await db.getAllAsync<{ category: string; spent: number }>(
+    `SELECT category, ABS(SUM(amount)) as spent 
+     FROM transactions 
+     WHERE type = 'expense' 
+     AND date >= ? AND date <= ?
+     GROUP BY category`,
+    [startOfMonth, endOfMonth]
+  );
+
+  return budgets.map((b) => {
+    const match = spentRows.find((r) => r.category.toLowerCase() === b.category.toLowerCase());
+    return {
+      category: b.category,
+      spent: match ? match.spent : 0,
+      limit: b.monthly_limit
+    };
+  });
+}
+
+// ----------------------------------------------------
+// 1-Tap Recurring Payments Auto-Posting Helpers
+// ----------------------------------------------------
+
+export interface DueRecurringItem {
+  id: string;
+  name: string;
+  amount: number;
+  category: string;
+  dueDate: string;
+  type: 'subscription' | 'sip';
+  account_id: string;
+}
+
+export async function getDueRecurringItems(): Promise<DueRecurringItem[]> {
+  const db = await getDatabase();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const results: DueRecurringItem[] = [];
+
+  // Active Subscriptions due on or before today
+  const subs = await db.getAllAsync<Subscription>(
+    `SELECT * FROM subscriptions WHERE status = 'active' AND next_billing_date <= ? ORDER BY next_billing_date ASC`,
+    [todayStr]
+  );
+  for (const s of subs) {
+    results.push({
+      id: s.id,
+      name: s.name,
+      amount: s.amount,
+      category: s.category,
+      dueDate: s.next_billing_date,
+      type: 'subscription',
+      account_id: s.account_id,
+    });
+  }
+
+  // Active SIPs due on or before today
+  const sips = await db.getAllAsync<SIP>(
+    `SELECT * FROM sips WHERE status = 'active' AND next_date <= ? ORDER BY next_date ASC`,
+    [todayStr]
+  );
+  for (const sip of sips) {
+    results.push({
+      id: sip.id,
+      name: sip.name,
+      amount: sip.amount,
+      category: 'Investment',
+      dueDate: sip.next_date,
+      type: 'sip',
+      account_id: sip.account_id,
+    });
+  }
+
+  return results;
+}
+
+export async function confirmAndPostRecurringItem(item: DueRecurringItem): Promise<void> {
+  const db = await getDatabase();
+  const txId = `tx-auto-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const nowIso = new Date().toISOString();
+
+  await db.withTransactionAsync(async () => {
+    if (item.type === 'subscription') {
+      const sub = await db.getFirstAsync<Subscription>('SELECT * FROM subscriptions WHERE id = ?', [item.id]);
+      if (!sub) return;
+
+      // 1. Post expense transaction
+      await db.runAsync(
+        `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+         VALUES (?, ?, ?, ?, ?, 'expense', ?, 1);`,
+        [txId, sub.account_id, -sub.amount, sub.category, `Subscription: ${sub.name}`, nowIso]
+      );
+
+      // 2. Deduct from account balance
+      await db.runAsync(`UPDATE accounts SET balance = balance - ? WHERE id = ?;`, [sub.amount, sub.account_id]);
+
+      // 3. Advance next billing date
+      const nextDate = new Date(sub.next_billing_date);
+      if (sub.billing_cycle === 'weekly') {
+        nextDate.setDate(nextDate.getDate() + 7);
+      } else if (sub.billing_cycle === 'yearly') {
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+      } else {
+        nextDate.setMonth(nextDate.getMonth() + 1);
+      }
+      const nextDateStr = nextDate.toISOString().split('T')[0];
+
+      await db.runAsync(`UPDATE subscriptions SET next_billing_date = ? WHERE id = ?;`, [nextDateStr, sub.id]);
+    } else {
+      const sip = await db.getFirstAsync<SIP>('SELECT * FROM sips WHERE id = ?', [item.id]);
+      if (!sip) return;
+
+      const inv = await db.getFirstAsync<Investment>('SELECT * FROM investments WHERE id = ?', [sip.investment_id]);
+      const currentPrice = inv ? inv.current_price : 100;
+      const sharesBought = sip.amount / currentPrice;
+
+      // 1. Post investment transaction
+      await db.runAsync(
+        `INSERT INTO transactions (id, account_id, amount, category, note, type, date, recurring)
+         VALUES (?, ?, ?, 'Investment', ?, 'expense', ?, 1);`,
+        [txId, sip.account_id, -sip.amount, `SIP: ${sip.name} (${sharesBought.toFixed(4)} shares)`, nowIso]
+      );
+
+      // 2. Deduct balance
+      await db.runAsync(`UPDATE accounts SET balance = balance - ? WHERE id = ?;`, [sip.amount, sip.account_id]);
+
+      // 3. Update investment shares if found
+      if (inv) {
+        const newShares = inv.shares + sharesBought;
+        const newAvgBuyPrice = ((inv.shares * inv.buy_price) + (sharesBought * currentPrice)) / newShares;
+        await db.runAsync(`UPDATE investments SET shares = ?, buy_price = ? WHERE id = ?;`, [newShares, newAvgBuyPrice, inv.id]);
+      }
+
+      // 4. Advance next date
+      const nextDate = new Date(sip.next_date);
+      if (sip.frequency === 'weekly') {
+        nextDate.setDate(nextDate.getDate() + 7);
+      } else if (sip.frequency === 'yearly') {
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+      } else {
+        nextDate.setMonth(nextDate.getMonth() + 1);
+      }
+      const nextDateStr = nextDate.toISOString().split('T')[0];
+
+      await db.runAsync(`UPDATE sips SET next_date = ? WHERE id = ?;`, [nextDateStr, sip.id]);
+    }
+  });
+
+  notifyDatabaseChanged();
+}
+
+
 

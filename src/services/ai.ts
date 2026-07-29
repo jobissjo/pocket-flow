@@ -1,4 +1,4 @@
-import { getDatabase } from './db';
+import { getDatabase, getCategoryBudgetUtilization } from './db';
 
 export interface AIResponse {
   content: string;
@@ -12,38 +12,24 @@ export async function processAIQuery(queryText: string): Promise<AIResponse> {
 
   // 1. Budget status query
   if (lowerQuery.includes('budget') || lowerQuery.includes('status') || lowerQuery.includes('limit')) {
-    // Get actual spending for categories
-    const rows = await db.getAllAsync<{ category: string; spent: number }>(
-      `SELECT category, ABS(SUM(amount)) as spent 
-       FROM transactions 
-       WHERE type = 'expense' 
-       AND category IN ('Food', 'Transport', 'Shopping', 'Grocery')
-       GROUP BY category`
-    );
-
-    const limits: Record<string, number> = {
-      Food: 600,
-      Transport: 200,
-      Shopping: 300,
-      Grocery: 150
-    };
+    const budgetList = await getCategoryBudgetUtilization();
 
     let md = `### Budget Status Update\n\nHere is your current budget utilization:\n\n`;
     const chartData: { name: string; spent: number; limit: number; percent: number }[] = [];
 
-    limitsList().forEach(cat => {
-      const match = rows.find(r => r.category.toLowerCase() === cat.toLowerCase());
-      const spent = match ? match.spent : 0;
-      const limit = limits[cat];
-      const percent = Math.min(100, Math.round((spent / limit) * 100));
-      
-      chartData.push({ name: cat, spent, limit, percent });
+    if (budgetList.length === 0) {
+      md += `*No active category budgets set up yet. Tap "Manage limits" on your home dashboard to set up budget limits!*`;
+    } else {
+      budgetList.forEach(item => {
+        const percent = item.limit > 0 ? Math.round((item.spent / item.limit) * 100) : 0;
+        chartData.push({ name: item.category, spent: item.spent, limit: item.limit, percent });
 
-      const statusIcon = percent > 90 ? '🔴 Over/Close' : percent > 75 ? '🟡 Warning' : '🟢 On Track';
-      md += `- **${cat}**: $${spent.toFixed(2)} / $${limit} (${percent}%) - *${statusIcon}*\n`;
-    });
+        const statusIcon = percent > 95 ? '🔴 Over Limit' : percent > 75 ? '🟡 Warning' : '🟢 On Track';
+        md += `- **${item.category}**: $${item.spent.toFixed(2)} / $${item.limit.toFixed(2)} (${percent}%) - *${statusIcon}*\n`;
+      });
 
-    md += `\nKeep an eye on the budgets highlighted in yellow or red. Overall, you are managing your finances well this month!`;
+      md += `\nKeep an eye on the budgets highlighted in yellow or red. Overall, you are managing your finances well this month!`;
+    }
 
     return {
       content: md,

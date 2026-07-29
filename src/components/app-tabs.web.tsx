@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Tabs,
   TabList,
@@ -6,33 +7,38 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { Pressable, View, StyleSheet } from 'react-native';
-
-import { ThemedText } from './themed-text';
-import { ThemedView } from './themed-view';
-
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Pressable, View, StyleSheet, Text, Platform } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '@/services/theme-context';
+import { Colors, MaxContentWidth } from '@/constants/theme';
 
 export default function AppTabs() {
+  const { isDark } = useTheme();
+  const colors = Colors[isDark ? 'dark' : 'light'];
+
   return (
-    <Tabs>
-      <TabSlot style={{ height: '100%' }} />
+    <Tabs style={{ flex: 1 }}>
+      <TabSlot style={{ flex: 1 }} />
       <TabList asChild>
-        <CustomTabList>
+        <CustomTabList isDark={isDark}>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
+            <TabButton icon="home" label="Home" isDark={isDark} colors={colors} />
           </TabTrigger>
+
           <TabTrigger name="history" href="/history" asChild>
-            <TabButton>History</TabButton>
+            <TabButton icon="history" label="History" isDark={isDark} colors={colors} />
           </TabTrigger>
+
           <TabTrigger name="analytics" href="/analytics" asChild>
-            <TabButton>Stats</TabButton>
+            <TabButton icon="bar-chart" label="Stats" isDark={isDark} colors={colors} />
           </TabTrigger>
+
           <TabTrigger name="goals" href="/goals" asChild>
-            <TabButton>Goals</TabButton>
+            <TabButton icon="flag" label="Goals" isDark={isDark} colors={colors} />
           </TabTrigger>
+
           <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton>Profile</TabButton>
+            <TabButton icon="person" label="Profile" isDark={isDark} colors={colors} />
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -40,29 +46,66 @@ export default function AppTabs() {
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+interface TabButtonProps extends TabTriggerSlotProps {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  isDark: boolean;
+  colors: any;
+}
+
+export function TabButton({ icon, label, isFocused, isDark, colors, ...props }: TabButtonProps) {
+  const activeColor = colors.tint || '#3b82f6';
+  const inactiveColor = isDark ? '#94a3b8' : '#64748b';
+
   return (
-    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="smallBold" themeColor={isFocused ? 'text' : 'textSecondary'}>
-          {children}
-        </ThemedText>
-      </ThemedView>
+    <Pressable
+      {...props}
+      android_ripple={{
+        color: isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.15)',
+        borderless: true,
+        radius: 30,
+      }}
+      style={({ pressed }) => [
+        styles.tabButton,
+        isFocused && {
+          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.22)' : 'rgba(59, 130, 246, 0.14)',
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <MaterialIcons
+        name={icon}
+        size={22}
+        color={isFocused ? activeColor : inactiveColor}
+      />
+      <Text
+        style={[
+          styles.tabLabel,
+          { color: isFocused ? activeColor : inactiveColor },
+          isFocused && styles.tabLabelActive,
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
-export function CustomTabList(props: TabListProps) {
+export function CustomTabList({ children, isDark, ...props }: TabListProps & { isDark: boolean }) {
   return (
-    <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          WealthFlow
-        </ThemedText>
-        <View style={styles.tabsRow}>{props.children}</View>
-      </ThemedView>
+    <View {...props} style={styles.tabListContainer} pointerEvents="box-none">
+      <View
+        pointerEvents="auto"
+        style={[
+          styles.innerContainer,
+          {
+            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.96)',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
+          },
+        ]}
+      >
+        <View style={styles.tabsRow}>{children}</View>
+      </View>
     </View>
   );
 }
@@ -71,38 +114,57 @@ const styles = StyleSheet.create({
   tabListContainer: {
     position: 'absolute',
     bottom: 0,
-    width: '100%',
-    padding: Spacing.three,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingTop: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    flexDirection: 'row',
   },
   innerContainer: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    flexGrow: 1,
-    gap: Spacing.two,
+    justifyContent: 'space-around',
+    width: '100%',
     maxWidth: MaxContentWidth,
+    borderRadius: 32,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  brandText: {
-    color: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
   },
   tabsRow: {
     flexDirection: 'row',
-    gap: Spacing.two,
+    flex: 1,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 9999,
+    overflow: 'hidden',
+    marginHorizontal: 2,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  tabLabelActive: {
+    fontWeight: '700',
   },
   pressed: {
     opacity: 0.7,
-  },
-  tabButtonView: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: 9999,
   },
 });
