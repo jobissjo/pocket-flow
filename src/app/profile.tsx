@@ -1,1316 +1,572 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Platform,
   Switch,
-  ActivityIndicator,
   Alert,
-  Modal,
-  TextInput
+  ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
-
-import { getDatabase, Account, getSetting, setSetting, clearAllData, exportDatabaseToJson, importDatabaseFromJson, resetOnboarding } from '@/services/db';
-import { useRouter } from 'expo-router';
-import { useTheme } from '@/services/theme-context';
-import { getCurrencySymbol } from '@/services/currency';
-import { useSecurity } from '@/services/security-context';
+import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/components/ui/glass-card';
-import ReportModal from '@/components/report-modal';
-import SubscriptionsModal from '@/components/subscriptions-modal';
-import InvestmentsModal from '@/components/investments-modal';
-import { rescheduleAllReminders, syncDailyLoggingReminder } from '@/services/notifications';
+import { ModalSheet } from '@/components/ui/modal-sheet';
+import { CustomInput } from '@/components/ui/custom-input';
+import { useAuth } from '@/services/auth-context';
+import { useTheme } from '@/services/theme-context';
+import { useSecurity } from '@/services/security-context';
+import { useCurrency } from '@/services/currency';
+import { getBaseUrl, setCustomBaseUrl } from '@/services/api';
+import { userService } from '@/services/users';
+import { hapticImpactMedium, hapticNotificationSuccess, hapticLight } from '@/services/haptics';
 
-
-
-const presetAvatars = [
-  { id: '1', emoji: '👤', bg: '#475569' },
-  { id: '2', emoji: '🧑‍💻', bg: '#1e3a8a' },
-  { id: '3', emoji: '🚀', bg: '#15803d' },
-  { id: '4', emoji: '🦊', bg: '#b45309' },
-  { id: '5', emoji: '🦁', bg: '#b91c1c' },
-  { id: '6', emoji: '🐱', bg: '#be185d' },
-  { id: '7', emoji: '🦖', bg: '#047857' },
-  { id: '8', emoji: '🦄', bg: '#6d28d9' },
-  { id: '9', emoji: '🤖', bg: '#0369a1' },
-  { id: '10', emoji: '🍕', bg: '#a21caf' },
-  { id: '11', emoji: '💼', bg: '#701a75' },
-  { id: '12', emoji: '💎', bg: '#0f766e' }
+const CURRENCIES = [
+  { code: 'USD', name: 'US Dollar ($)' },
+  { code: 'EUR', name: 'Euro (€)' },
+  { code: 'GBP', name: 'British Pound (£)' },
+  { code: 'INR', name: 'Indian Rupee (₹)' },
+  { code: 'JPY', name: 'Japanese Yen (¥)' },
+  { code: 'CAD', name: 'Canadian Dollar (CA$)' },
+  { code: 'AUD', name: 'Australian Dollar (AU$)' },
 ];
 
 export default function ProfileScreen() {
-  const isFocused = useIsFocused();
-  const router = useRouter();
-  const { themeMode, setThemeMode, isDark } = useTheme();
-  const { biometricsEnabled, toggleBiometrics, lockVault, hasSecurity } = useSecurity();
+  const { user, logout, updateProfile } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
+  const { biometricsEnabled, toggleBiometrics, hasSecurity } = useSecurity();
+  const { currencyCode, updateCurrency } = useCurrency();
 
-  const [loading, setLoading] = useState(true);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  
-  // Settings state
-  const [currency, setCurrency] = useState('USD');
-  const [username, setUsername] = useState('Alex');
-  const [memberSince, setMemberSince] = useState('June 2026');
-  const [avatar, setAvatar] = useState('👤');
-  const [editAvatar, setEditAvatar] = useState('👤');
-  const [billRemindersEnabled, setBillRemindersEnabled] = useState(true);
-  const [dailyReminderEnabled, setDailyReminderEnabled] = useState(false);
+  // Edit Profile State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState(user?.full_name || '');
+  const [editPhone, setEditPhone] = useState(user?.mobile_number || '');
+  const [savingProfile, setSavingProfile] = useState(false);
 
-  // Modal visibility states
-  const [editProfileVisible, setEditProfileVisible] = useState(false);
-  const [currencyVisible, setCurrencyVisible] = useState(false);
-  const [manageAccountsVisible, setManageAccountsVisible] = useState(false);
-  const [accountFormVisible, setAccountFormVisible] = useState(false);
-  const [reportVisible, setReportVisible] = useState(false);
-  const [subsVisible, setSubsVisible] = useState(false);
-  const [investmentsVisible, setInvestmentsVisible] = useState(false);
+  // API Config State
+  const [showApiModal, setShowApiModal] = useState(false);
+  const [apiUrl, setApiUrl] = useState('');
 
-  // Profile Edit fields
-  const [editName, setEditName] = useState('');
-  const [editMember, setEditMember] = useState('');
-
-  // Account Form fields (for add/edit account)
-  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
-  const [accName, setAccName] = useState('');
-  const [accType, setAccType] = useState<'bank' | 'credit' | 'crypto' | 'digital'>('bank');
-  const [accBalance, setAccBalance] = useState('');
-  const [accDetails, setAccDetails] = useState('');
-  const [accColor, setAccColor] = useState('#1e3a8a,#0f172a');
-  const [accCreditLimit, setAccCreditLimit] = useState('');
-  const [accBillingDay, setAccBillingDay] = useState('');
-  const [accDueDay, setAccDueDay] = useState('');
-
-  const loadProfileData = async () => {
-    try {
-      setLoading(true);
-      const db = await getDatabase();
-      
-      // Load accounts
-      const rows = await db.getAllAsync<Account>('SELECT * FROM accounts');
-      setAccounts(rows);
-
-      // Load settings (biometrics is managed by SecurityContext)
-
-      const curr = await getSetting('currency', 'USD');
-      setCurrency(curr);
-
-      const name = await getSetting('username', 'Alex');
-      setUsername(name);
-
-      const since = await getSetting('member_since', 'June 2026');
-      setMemberSince(since);
-
-      const avatarVal = await getSetting('user_avatar', '👤');
-      setAvatar(avatarVal);
-
-      const billRem = await getSetting('bill_reminders_enabled', 'true');
-      setBillRemindersEnabled(billRem === 'true');
-
-      const dailyRem = await getSetting('daily_reminder_enabled', 'false');
-      setDailyReminderEnabled(dailyRem === 'true');
-
-    } catch (error) {
-      console.error('Error loading profile data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Currency Modal State
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
 
   useEffect(() => {
-    if (isFocused) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      loadProfileData();
-    }
-  }, [isFocused]);
+    getBaseUrl().then(setApiUrl);
+  }, []);
 
-  const handleToggleBillReminders = async (val: boolean) => {
-    setBillRemindersEnabled(val);
-    await setSetting('bill_reminders_enabled', val ? 'true' : 'false');
-    await rescheduleAllReminders();
-  };
-
-  const handleToggleDailyReminder = async (val: boolean) => {
-    setDailyReminderEnabled(val);
-    await setSetting('daily_reminder_enabled', val ? 'true' : 'false');
-    await syncDailyLoggingReminder();
-  };
-
-  const handleToggleBiometrics = async (val: boolean) => {
-    if (!hasSecurity && val) {
-      Alert.alert(
-        'Not Supported',
-        'Your device does not support biometric or passcode security, or it is not set up.'
-      );
-      return;
-    }
-    const success = await toggleBiometrics(val);
-    if (!success && !val) {
-      Alert.alert('Authentication Failed', 'Could not disable lock security.');
-    }
+  const handleOpenEdit = () => {
+    hapticLight();
+    setEditName(user?.full_name || '');
+    setEditPhone(user?.mobile_number || '');
+    setShowEditModal(true);
   };
 
   const handleSaveProfile = async () => {
-    if (!editName.trim()) {
-      Alert.alert('Error', 'Name cannot be empty.');
-      return;
-    }
-    await setSetting('username', editName);
-    await setSetting('member_since', editMember);
-    await setSetting('user_avatar', editAvatar);
-    setUsername(editName);
-    setMemberSince(editMember);
-    setAvatar(editAvatar);
-    setEditProfileVisible(false);
-  };
-
-  const handleSelectCurrency = async (currCode: string) => {
-    await setSetting('currency', currCode);
-    setCurrency(currCode);
-    setCurrencyVisible(false);
-  };
-
-  // Open Account form for new account
-  const handleAddAccountClick = () => {
-    setEditingAccount(null);
-    setAccName('');
-    setAccType('bank');
-    setAccBalance('');
-    setAccDetails('');
-    setAccColor('#1e3a8a,#0f172a');
-    setAccCreditLimit('');
-    setAccBillingDay('');
-    setAccDueDay('');
-    setAccountFormVisible(true);
-  };
-
-  // Open Account form for editing
-  const handleEditAccountClick = (acc: Account) => {
-    setEditingAccount(acc);
-    setAccName(acc.name);
-    setAccType(acc.type);
-    setAccBalance(acc.balance.toString());
-    setAccDetails(acc.details || '');
-    setAccColor(acc.color);
-    setAccCreditLimit(acc.credit_limit ? acc.credit_limit.toString() : '');
-    setAccBillingDay(acc.billing_day ? acc.billing_day.toString() : '');
-    setAccDueDay(acc.due_day ? acc.due_day.toString() : '');
-    setAccountFormVisible(true);
-  };
-
-  const handleSaveAccount = async () => {
-    if (!accName.trim()) {
-      Alert.alert('Error', 'Account name cannot be empty.');
-      return;
-    }
-    const balNum = parseFloat(accBalance);
-    if (isNaN(balNum)) {
-      Alert.alert('Error', 'Please enter a valid balance.');
-      return;
-    }
-
-    const limitNum = accType === 'credit' ? parseFloat(accCreditLimit) || 0 : 0;
-    const billingDayNum = accType === 'credit' ? parseInt(accBillingDay) || 0 : 0;
-    const dueDayNum = accType === 'credit' ? parseInt(accDueDay) || 0 : 0;
-
-    if (accType === 'credit') {
-      if (billingDayNum < 0 || billingDayNum > 31 || dueDayNum < 0 || dueDayNum > 31) {
-        Alert.alert('Error', 'Billing and Due Day must be between 1 and 31.');
-        return;
-      }
-    }
-
     try {
-      const db = await getDatabase();
-      if (editingAccount) {
-        // Edit existing account
-        await db.runAsync(
-          `UPDATE accounts SET name = ?, type = ?, balance = ?, details = ?, color = ?, credit_limit = ?, billing_day = ?, due_day = ? WHERE id = ?`,
-          [accName, accType, balNum, accDetails, accColor, limitNum, billingDayNum, dueDayNum, editingAccount.id]
-        );
-      } else {
-        // Create new account
-        const accId = 'acc-' + Date.now();
-        await db.runAsync(
-          `INSERT INTO accounts (id, name, type, balance, details, color, credit_limit, billing_day, due_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [accId, accName, accType, balNum, accDetails, accColor, limitNum, billingDayNum, dueDayNum]
-        );
-      }
-      setAccountFormVisible(false);
-      loadProfileData();
-    } catch (e) {
-      console.error('Error saving account:', e);
-      Alert.alert('Error', 'Failed to save account.');
+      setSavingProfile(true);
+      await updateProfile({
+        full_name: editName.trim(),
+        mobile_number: editPhone.trim(),
+      });
+      hapticNotificationSuccess();
+      setShowEditModal(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
     }
   };
 
-  const handleDeleteAccount = async (accId: string) => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete this account? All associated transactions will be deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive', 
-          onPress: async () => {
-            try {
-              const db = await getDatabase();
-              await db.runAsync('DELETE FROM accounts WHERE id = ?', [accId]);
-              loadProfileData();
-            } catch (e) {
-              console.error('Error deleting account:', e);
-            }
-          } 
-        }
-      ]
-    );
-  };
-
-  const handleExportData = () => {
-    Alert.alert(
-      'Export Data',
-      'All local data will be exported as a JSON database backup. Do you want to proceed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Export', 
-          onPress: async () => {
-            try {
-              await exportDatabaseToJson();
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to export backup.');
-            }
-          } 
-        }
-      ]
-    );
-  };
-
-  const handleImportData = () => {
-    Alert.alert(
-      'Import Data',
-      'Restoring a backup will overwrite all current app data. This action cannot be undone. Do you want to proceed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Restore Backup', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const success = await importDatabaseFromJson();
-              if (success) {
-                Alert.alert('Success', 'Data restored successfully from backup.', [
-                  { text: 'OK', onPress: () => loadProfileData() }
-                ]);
-              }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to import backup. Please ensure the file is a valid WealthFlow backup.');
-            }
-          } 
-        }
-      ]
-    );
+  const handleSaveApiUrl = async () => {
+    hapticLight();
+    await setCustomBaseUrl(apiUrl);
+    hapticNotificationSuccess();
+    setShowApiModal(false);
   };
 
   const handleLogout = () => {
-    Alert.alert('Lock Vault', 'Are you sure you want to lock the vault? You will need to authenticate to access it again.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Lock', style: 'destructive', onPress: () => lockVault() }
-    ]);
-  };
-
-  const handleReplayOnboarding = async () => {
-    await resetOnboarding();
-    Alert.alert('App Guide Reset', 'The welcome guide & setup wizard will appear when you return to Home Dashboard.', [
-      { text: 'Go to Dashboard', onPress: () => router.push('/') },
-      { text: 'OK' }
-    ]);
-  };
-
-  const handleClearAllData = () => {
-    Alert.alert(
-      'Clear All Data?',
-      'Are you absolutely sure you want to delete all accounts, transactions, goals, and start from scratch? This cannot be undone.',
-      [
+    hapticImpactMedium();
+    if (Platform.OS === 'web') {
+      if (window.confirm('Log out from PocketFlow?')) {
+        logout();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete Everything', 
+        {
+          text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await clearAllData();
-              Alert.alert('Data Cleared', 'All data has been wiped. App will now reload options.', [
-                {
-                  text: 'OK',
-                  onPress: () => {
-                    loadProfileData();
-                  }
-                }
-              ]);
-            } catch {
-              Alert.alert('Error', 'Failed to clear data.');
-            }
-          }
-        }
-      ]
-    );
+          onPress: () => logout(),
+        },
+      ]);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    hapticImpactMedium();
+    const confirmDelete = async () => {
+      try {
+        await userService.deleteAccount();
+        await logout();
+      } catch (err: any) {
+        Alert.alert('Error', err.message || 'Could not delete account');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('PERMANENT ACTION: Delete your entire account and all associated financial records?')) {
+        confirmDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Account',
+        'This action is irreversible. All your transaction history, bank accounts, cards, and EMIs will be permanently deleted.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Permanently',
+            style: 'destructive',
+            onPress: confirmDelete,
+          },
+        ]
+      );
+    }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* User Profile Header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarBorder}>
-            <View style={[styles.avatarPlaceholder, { backgroundColor: (presetAvatars.find(a => a.emoji === avatar) || presetAvatars[0]).bg }]}>
-              <Text style={{ fontSize: 48 }}>{(presetAvatars.find(a => a.emoji === avatar) || presetAvatars[0]).emoji}</Text>
+    <View style={[styles.screen, { backgroundColor: isDark ? '#08080C' : '#F6F6F9' }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={[styles.screenTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+          Profile & Settings
+        </Text>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* User Card */}
+        <GlassCard style={styles.userCard}>
+          <View style={styles.avatarRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {user?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+              </Text>
             </View>
-            <TouchableOpacity 
-              style={styles.editBtn}
-              onPress={() => {
-                setEditName(username);
-                setEditMember(memberSince);
-                setEditAvatar(avatar);
-                setEditProfileVisible(true);
-              }}
-            >
-              <MaterialIcons name="edit" size={14} color="#0A0A0A" />
+            <View style={{ flex: 1, marginLeft: 14 }}>
+              <Text style={[styles.userName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                {user?.full_name || 'PocketFlow User'}
+              </Text>
+              <Text style={[styles.userEmail, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                {user?.email}
+              </Text>
+              <Text style={[styles.userPhone, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+                {user?.mobile_number || 'No phone set'}
+              </Text>
+            </View>
+
+            <TouchableOpacity onPress={handleOpenEdit} style={styles.editProfileBtn}>
+              <Ionicons name="create-outline" size={20} color="#3B82F6" />
             </TouchableOpacity>
           </View>
-          
-          <Text style={[styles.profileName, !isDark && styles.textLight]}>{username}</Text>
-          <View style={styles.membershipTag}>
-            <MaterialIcons name="stars" size={16} color="#a6c8ff" />
-            <Text style={styles.membershipText}>Member Since {memberSince}</Text>
-          </View>
-        </View>
-
-        {/* Linked Accounts Section */}
-        <GlassCard>
-          <View style={styles.cardHeaderRow}>
-            <Text style={[styles.cardSectionTitle, !isDark && styles.textLight]}>Linked Accounts</Text>
-            <TouchableOpacity onPress={() => setManageAccountsVisible(true)}>
-              <Text style={styles.cardActionLink}>Manage</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loading ? (
-            <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#0A0A0A'} style={{ marginVertical: 10 }} />
-          ) : (
-            <View style={styles.accountsRow}>
-              {accounts.map(acc => (
-                <TouchableOpacity 
-                  key={acc.id} 
-                  style={[styles.accountBadge, !isDark && styles.accountBadgeLight]}
-                  onPress={() => handleEditAccountClick(acc)}
-                >
-                  <MaterialIcons 
-                    name={acc.type === 'crypto' ? 'currency-bitcoin' : 'account-balance'} 
-                    size={16} 
-                    color={isDark ? '#ffffff' : '#0A0A0A'} 
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={[styles.accountBadgeText, !isDark && styles.textLight]}>
-                    {acc.name.split(' ')[0]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity style={styles.addAccountBtn} onPress={handleAddAccountClick}>
-                <MaterialIcons name="add" size={18} color="#8e9192" />
-              </TouchableOpacity>
-            </View>
-          )}
         </GlassCard>
 
-        {/* Settings: App Theme (Manual Toggle) */}
-        <GlassCard>
-          <View style={styles.settingsRow}>
+        {/* Preferences Section */}
+        <Text style={[styles.groupLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+          PREFERENCES
+        </Text>
+
+        <GlassCard style={styles.groupCard}>
+          {/* Currency */}
+          <TouchableOpacity
+            onPress={() => {
+              hapticLight();
+              setShowCurrencyModal(true);
+            }}
+            style={styles.settingRow}
+          >
             <View style={styles.settingLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
-                <MaterialIcons name="brightness-6" size={22} color="#a6c8ff" />
-              </View>
-              <View>
-                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Dark Mode</Text>
-                <Text style={styles.settingDesc}>
-                  Theme is set to {themeMode === 'system' ? 'System' : themeMode === 'dark' ? 'Dark' : 'Light'}
-                </Text>
-              </View>
+              <Ionicons name="cash-outline" size={20} color="#3B82F6" style={styles.settingIcon} />
+              <Text style={[styles.settingTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                Display Currency
+              </Text>
             </View>
-            
-            {/* Toggle dark mode directly */}
+            <View style={styles.settingRight}>
+              <Text style={[styles.settingValue, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                {currencyCode}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={isDark ? '#64748B' : '#94A3B8'} />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          {/* Dark Mode */}
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <Ionicons
+                name={isDark ? 'moon-outline' : 'sunny-outline'}
+                size={20}
+                color="#A855F7"
+                style={styles.settingIcon}
+              />
+              <Text style={[styles.settingTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                Dark Appearance
+              </Text>
+            </View>
             <Switch
               value={isDark}
-              onValueChange={async (val) => {
-                await setThemeMode(val ? 'dark' : 'light');
+              onValueChange={() => {
+                hapticLight();
+                toggleTheme();
               }}
-              trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
-              thumbColor={isDark ? '#ffffff' : '#8e9192'}
+              trackColor={{ false: '#CBD5E1', true: '#2563EB' }}
             />
           </View>
         </GlassCard>
 
-        {/* Security Module */}
-        <GlassCard>
-          <View style={styles.settingsRow}>
+        {/* Security Section */}
+        <Text style={[styles.groupLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+          SECURITY & PRIVACY
+        </Text>
+
+        <GlassCard style={styles.groupCard}>
+          <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
-                <MaterialIcons name="fingerprint" size={22} color="#a6c8ff" />
-              </View>
+              <Ionicons name="finger-print-outline" size={20} color="#10B981" style={styles.settingIcon} />
               <View>
-                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Biometric Unlock</Text>
-                <Text style={styles.settingDesc}>Fingerprint / FaceID enabled</Text>
+                <Text style={[styles.settingTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                  Biometric App Lock
+                </Text>
+                <Text style={[styles.settingSub, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+                  Require Face ID / fingerprint to unlock
+                </Text>
               </View>
             </View>
             <Switch
               value={biometricsEnabled}
-              onValueChange={handleToggleBiometrics}
-              trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
-              thumbColor={biometricsEnabled ? '#ffffff' : '#8e9192'}
+              disabled={!hasSecurity && Platform.OS !== 'web'}
+              onValueChange={(val) => {
+                hapticLight();
+                toggleBiometrics(val);
+              }}
+              trackColor={{ false: '#CBD5E1', true: '#10B981' }}
             />
           </View>
-        </GlassCard>
 
-        {/* Notifications: Bill & SIP Reminders */}
-        <GlassCard>
-          <View style={styles.settingsRow}>
-            <View style={styles.settingLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
-                <MaterialIcons name="notifications-active" size={22} color="#a6c8ff" />
-              </View>
-              <View>
-                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Bill & Subscription Alerts</Text>
-                <Text style={styles.settingDesc}>Reminders 1 day before due date</Text>
-              </View>
-            </View>
-            <Switch
-              value={billRemindersEnabled}
-              onValueChange={handleToggleBillReminders}
-              trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
-              thumbColor={billRemindersEnabled ? '#ffffff' : '#8e9192'}
-            />
-          </View>
-        </GlassCard>
+          <View style={styles.divider} />
 
-        {/* Notifications: Daily Expense Logger */}
-        <GlassCard>
-          <View style={styles.settingsRow}>
-            <View style={styles.settingLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
-                <MaterialIcons name="alarm" size={22} color="#a6c8ff" />
-              </View>
-              <View>
-                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Daily Expense Reminder</Text>
-                <Text style={styles.settingDesc}>Check-in notification at 8:00 PM</Text>
-              </View>
-            </View>
-            <Switch
-              value={dailyReminderEnabled}
-              onValueChange={handleToggleDailyReminder}
-              trackColor={{ false: '#3a3a3c', true: '#a6c8ff' }}
-              thumbColor={dailyReminderEnabled ? '#ffffff' : '#8e9192'}
-            />
-          </View>
-        </GlassCard>
-
-        {/* Currency Module */}
-        <GlassCard>
-          <TouchableOpacity 
-            style={styles.settingsRow} 
-            activeOpacity={0.7}
-            onPress={() => setCurrencyVisible(true)}
+          {/* Backend API Host */}
+          <TouchableOpacity
+            onPress={() => {
+              hapticLight();
+              setShowApiModal(true);
+            }}
+            style={styles.settingRow}
           >
             <View style={styles.settingLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(158, 119, 237, 0.1)' }]}>
-                <MaterialIcons name="payments" size={22} color="#9e77ed" />
-              </View>
+              <Ionicons name="cloud-outline" size={20} color="#F59E0B" style={styles.settingIcon} />
               <View>
-                <Text style={[styles.settingTitle, !isDark && styles.textLight]}>Default Currency</Text>
-                <Text style={styles.settingDesc}>{currency} ({getCurrencySymbol(currency)})</Text>
+                <Text style={[styles.settingTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                  Backend Server API
+                </Text>
+                <Text
+                  style={[styles.settingSub, { color: isDark ? '#64748B' : '#94A3B8' }]}
+                  numberOfLines={1}
+                >
+                  {apiUrl || 'api-pocket-flow.onrender.com'}
+                </Text>
               </View>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
+            <Ionicons name="chevron-forward" size={18} color={isDark ? '#64748B' : '#94A3B8'} />
           </TouchableOpacity>
         </GlassCard>
 
-        {/* Settings List */}
-        <GlassCard style={{ paddingVertical: 8 }}>
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setReportVisible(true)}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="assessment" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Financial Reports (PDF / CSV)</Text>
+        {/* Account Actions */}
+        <Text style={[styles.groupLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+          ACCOUNT ACTIONS
+        </Text>
+
+        <GlassCard style={styles.groupCard}>
+          <TouchableOpacity onPress={handleLogout} style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <Ionicons name="log-out-outline" size={20} color="#3B82F6" style={styles.settingIcon} />
+              <Text style={[styles.settingTitle, { color: '#3B82F6', fontWeight: '700' }]}>
+                Sign Out
+              </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setSubsVisible(true)}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="card-membership" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Recurring Bills & Subscriptions</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
-          </TouchableOpacity>
+          <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={() => setInvestmentsVisible(true)}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="donut-large" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Investments & SIP Tracker</Text>
+          <TouchableOpacity onPress={handleDeleteAccount} style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <Ionicons name="trash-bin-outline" size={20} color="#EF4444" style={styles.settingIcon} />
+              <Text style={[styles.settingTitle, { color: '#EF4444', fontWeight: '700' }]}>
+                Delete Account
+              </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleExportData}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="file-download" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Export Backup (JSON)</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleImportData}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="file-upload" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Import Backup (JSON)</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleReplayOnboarding}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="auto-awesome" size={22} color="#3B82F6" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Replay App Intro & Setup Guide</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="help-outline" size={22} color="#8e9192" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, !isDark && styles.textLight]}>Help & Support</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
           </TouchableOpacity>
         </GlassCard>
 
-        {/* Danger Zone */}
-        <GlassCard style={{ paddingVertical: 8, borderColor: 'rgba(255, 180, 171, 0.2)', borderWidth: 1 }}>
-          <TouchableOpacity style={styles.listItem} activeOpacity={0.7} onPress={handleClearAllData}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="delete-forever" size={22} color="#ffb4ab" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, { color: '#ffb4ab', fontWeight: '600' }]}>Clear All Data (Start Fresh)</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ffb4ab" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.listItem, { borderTopWidth: 1, borderTopColor: 'rgba(255,180,171,0.1)' }]} activeOpacity={0.7} onPress={handleLogout}>
-            <View style={styles.listLeft}>
-              <MaterialIcons name="logout" size={22} color="#ffb4ab" style={{ marginRight: 14 }} />
-              <Text style={[styles.listTitle, { color: '#ffb4ab', fontWeight: '600' }]}>Logout / Lock Vault</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ffb4ab" />
-          </TouchableOpacity>
-        </GlassCard>
-
-        <Text style={styles.versionText}>WealthFlow Version 4.2.1-stable (Offline Mode)</Text>
-
-        <View style={{ height: 100 }} />
+        <Text style={[styles.versionText, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+          PocketFlow v1.0.0 • Connected to FastAPI & MongoDB
+        </Text>
       </ScrollView>
 
       {/* Edit Profile Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={editProfileVisible}
-        onRequestClose={() => setEditProfileVisible(false)}
+      <ModalSheet
+        visible={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit Profile"
+        subtitle="Update your personal details"
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, !isDark && styles.modalContentLight]}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setEditProfileVisible(false)}>
-                <MaterialIcons name="close" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
-              </TouchableOpacity>
-              <Text style={[styles.modalTitle, !isDark && styles.textLight]}>Edit Profile</Text>
-              <View style={{ width: 24 }} />
-            </View>
-            
-            <View style={styles.modalBody}>
-              <Text style={styles.fieldLabel}>Display Name</Text>
-              <TextInput
-                style={[styles.modalInput, !isDark && styles.modalInputLight]}
-                value={editName}
-                onChangeText={setEditName}
-                placeholder="Enter name"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-              />
+        <View style={{ paddingVertical: 8 }}>
+          <CustomInput
+            label="Full Name"
+            value={editName}
+            onChangeText={setEditName}
+            leftIcon="person-outline"
+          />
 
-              <Text style={styles.fieldLabel}>Member Since</Text>
-              <TextInput
-                style={[styles.modalInput, !isDark && styles.modalInputLight]}
-                value={editMember}
-                onChangeText={setEditMember}
-                placeholder="e.g. June 2026"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-              />
+          <CustomInput
+            label="Mobile Number"
+            value={editPhone}
+            onChangeText={setEditPhone}
+            keyboardType="phone-pad"
+            leftIcon="call-outline"
+          />
 
-              <Text style={styles.fieldLabel}>Choose Avatar</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarPresetGrid}>
-                {presetAvatars.map((item) => {
-                  const isSelected = editAvatar === item.emoji;
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[
-                        styles.avatarPresetOption,
-                        { backgroundColor: item.bg },
-                        isSelected && { borderColor: isDark ? '#ffffff' : '#0A0A0A', borderWidth: 2, transform: [{ scale: 1.1 }] }
-                      ]}
-                      onPress={() => setEditAvatar(item.emoji)}
-                    >
-                      <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}>
-                <Text style={styles.saveBtnText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Currency Selector Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={currencyVisible}
-        onRequestClose={() => setCurrencyVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, !isDark && styles.modalContentLight]}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setCurrencyVisible(false)}>
-                <MaterialIcons name="close" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
-              </TouchableOpacity>
-              <Text style={[styles.modalTitle, !isDark && styles.textLight]}>Select Currency</Text>
-              <View style={{ width: 24 }} />
-            </View>
-            
-            <View style={styles.modalBody}>
-              {['USD', 'EUR', 'GBP', 'INR'].map((code) => {
-                const isSelected = currency === code;
-                return (
-                  <TouchableOpacity
-                    key={code}
-                    style={[
-                      styles.currencyRow, 
-                      isSelected && styles.activeCurrencyRow,
-                      !isDark && styles.currencyRowLight
-                    ]}
-                    onPress={() => handleSelectCurrency(code)}
-                  >
-                    <Text style={[
-                      styles.currencyCodeText, 
-                      isSelected && styles.activeCurrencyText,
-                      !isDark && styles.textLight
-                    ]}>
-                      {code} ({getCurrencySymbol(code)})
-                    </Text>
-                    {isSelected && <MaterialIcons name="check" size={20} color="#a6c8ff" />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Manage Accounts Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={manageAccountsVisible}
-        onRequestClose={() => setManageAccountsVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, !isDark && styles.modalContentLight]}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setManageAccountsVisible(false)}>
-                <MaterialIcons name="close" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
-              </TouchableOpacity>
-              <Text style={[styles.modalTitle, !isDark && styles.textLight]}>Manage Accounts</Text>
-              <TouchableOpacity onPress={handleAddAccountClick}>
-                <MaterialIcons name="add" size={24} color={isDark ? '#ffffff' : '#0A0A0A'} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.modalBody}>
-              {accounts.map(acc => (
-                <View key={acc.id} style={[styles.manageAccRow, !isDark && styles.manageAccRowLight]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.manageAccName, !isDark && styles.textLight]}>{acc.name}</Text>
-                    <Text style={styles.manageAccDetails}>{acc.type} • {acc.details}</Text>
-                    <Text style={[styles.manageAccBal, !isDark && styles.textLight]}>
-                      ${acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </Text>
-                  </View>
-                  <View style={styles.manageAccActions}>
-                    <TouchableOpacity onPress={() => handleEditAccountClick(acc)} style={styles.actionBtn}>
-                      <MaterialIcons name="edit" size={20} color="#8e9192" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDeleteAccount(acc.id)} style={styles.actionBtn}>
-                      <MaterialIcons name="delete" size={20} color="#ffb4ab" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add/Edit Account Form Modal */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={accountFormVisible}
-        onRequestClose={() => setAccountFormVisible(false)}
-      >
-        <View style={styles.modalOverlayCenter}>
-          <View style={[styles.formCard, !isDark && styles.formCardLight]}>
-            <Text style={[styles.formTitle, !isDark && styles.textLight]}>
-              {editingAccount ? 'Edit Account' : 'New Account'}
-            </Text>
-
-            <Text style={styles.fieldLabel}>Account Name</Text>
-            <TextInput
-              style={[styles.modalInput, !isDark && styles.modalInputLight]}
-              value={accName}
-              onChangeText={setAccName}
-              placeholder="e.g. Chase Checkings"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-            />
-
-            <Text style={styles.fieldLabel}>Balance</Text>
-            <TextInput
-              style={[styles.modalInput, !isDark && styles.modalInputLight]}
-              value={accBalance}
-              onChangeText={setAccBalance}
-              keyboardType="numeric"
-              placeholder="0.00"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-            />
-
-            <Text style={styles.fieldLabel}>Card Details / Masked Number</Text>
-            <TextInput
-              style={[styles.modalInput, !isDark && styles.modalInputLight]}
-              value={accDetails}
-              onChangeText={setAccDetails}
-              placeholder="e.g. •••• 8821 or wallet address"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-            />
-
-            <Text style={styles.fieldLabel}>Account Type</Text>
-            <View style={styles.typeOptions}>
-              {['bank', 'credit', 'crypto', 'digital'].map((type) => {
-                const isSel = accType === type;
-                return (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.typeOptionPill, isSel && styles.activeTypePill]}
-                    onPress={() => setAccType(type as any)}
-                  >
-                    <Text style={[styles.typeOptionText, isSel && styles.activeTypeText]}>
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {accType === 'credit' && (
-              <View style={{ marginBottom: 12 }}>
-                <Text style={styles.fieldLabel}>Credit Limit ($)</Text>
-                <TextInput
-                  style={[styles.modalInput, !isDark && styles.modalInputLight]}
-                  value={accCreditLimit}
-                  onChangeText={setAccCreditLimit}
-                  keyboardType="numeric"
-                  placeholder="e.g. 5000"
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                />
-
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.fieldLabel}>Billing Day (1-31)</Text>
-                    <TextInput
-                      style={[styles.modalInput, !isDark && styles.modalInputLight]}
-                      value={accBillingDay}
-                      onChangeText={setAccBillingDay}
-                      keyboardType="numeric"
-                      placeholder="e.g. 15"
-                      placeholderTextColor="rgba(255,255,255,0.3)"
-                      maxLength={2}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.fieldLabel}>Due Day (1-31)</Text>
-                    <TextInput
-                      style={[styles.modalInput, !isDark && styles.modalInputLight]}
-                      value={accDueDay}
-                      onChangeText={setAccDueDay}
-                      keyboardType="numeric"
-                      placeholder="e.g. 25"
-                      placeholderTextColor="rgba(255,255,255,0.3)"
-                      maxLength={2}
-                    />
-                  </View>
-                </View>
-              </View>
+          <TouchableOpacity
+            onPress={handleSaveProfile}
+            disabled={savingProfile}
+            style={styles.modalSaveBtn}
+          >
+            {savingProfile ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.modalSaveText}>Save Changes</Text>
             )}
-
-            <View style={styles.formActions}>
-              <TouchableOpacity onPress={() => setAccountFormVisible(false)} style={styles.formCancelBtn}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSaveAccount} style={styles.formSaveBtn}>
-                <Text style={styles.saveBtnTextDark}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </ModalSheet>
 
-      <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} />
-      <SubscriptionsModal visible={subsVisible} onClose={() => setSubsVisible(false)} />
-      <InvestmentsModal visible={investmentsVisible} onClose={() => setInvestmentsVisible(false)} />
+      {/* Currency Picker Modal */}
+      <ModalSheet
+        visible={showCurrencyModal}
+        onClose={() => setShowCurrencyModal(false)}
+        title="Select Currency"
+        subtitle="Choose your preferred display currency"
+      >
+        <View style={{ paddingVertical: 8 }}>
+          {CURRENCIES.map((curr) => {
+            const isSelected = currencyCode === curr.code;
+            return (
+              <TouchableOpacity
+                key={curr.code}
+                onPress={() => {
+                  hapticNotificationSuccess();
+                  updateCurrency(curr.code);
+                  setShowCurrencyModal(false);
+                }}
+                style={[
+                  styles.currencyItem,
+                  {
+                    backgroundColor: isSelected
+                      ? 'rgba(59, 130, 246, 0.15)'
+                      : 'transparent',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.currencyName,
+                    {
+                      color: isSelected
+                        ? '#3B82F6'
+                        : isDark
+                        ? '#FFFFFF'
+                        : '#0F172A',
+                      fontWeight: isSelected ? '700' : '500',
+                    },
+                  ]}
+                >
+                  {curr.name}
+                </Text>
+                {isSelected && (
+                  <Ionicons name="checkmark-circle" size={20} color="#3B82F6" />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ModalSheet>
 
-    </SafeAreaView>
+      {/* API URL Config Modal */}
+      <ModalSheet
+        visible={showApiModal}
+        onClose={() => setShowApiModal(false)}
+        title="API Server Host"
+        subtitle="Configure the backend REST API endpoint"
+      >
+        <View style={{ paddingVertical: 8 }}>
+          <CustomInput
+            label="API Base URL"
+            value={apiUrl}
+            onChangeText={setApiUrl}
+            placeholder="https://api-pocket-flow.onrender.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            leftIcon="cloud-outline"
+          />
+
+          <TouchableOpacity onPress={handleSaveApiUrl} style={styles.modalSaveBtn}>
+            <Text style={styles.modalSaveText}>Update Server Host</Text>
+          </TouchableOpacity>
+        </View>
+      </ModalSheet>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: 'transparent',
+    paddingTop: Platform.OS === 'ios' ? 56 : 32,
   },
-  textLight: {
-    color: '#0A0A0A',
+  header: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  screenTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
-  profileHeader: {
+  userCard: {
+    padding: 20,
+    borderRadius: 22,
+    marginBottom: 20,
+  },
+  avatarRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
   },
-  avatarBorder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 4,
-    position: 'relative',
   },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 45,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  avatarPlaceholderLight: {
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  editBtn: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  profileName: {
-    fontSize: 22,
+  userName: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 16,
   },
-  membershipTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(166, 200, 255, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginTop: 8,
-  },
-  membershipText: {
-    color: '#a6c8ff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardSectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  cardActionLink: {
-    color: '#a6c8ff',
+  userEmail: {
     fontSize: 13,
-    fontWeight: '600',
+    marginTop: 2,
   },
-  accountsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  accountBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  accountBadgeLight: {
-    backgroundColor: '#f2f2f7',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  accountBadgeText: {
-    color: '#ffffff',
+  userPhone: {
     fontSize: 12,
-    fontWeight: '500',
+    marginTop: 2,
   },
-  addAccountBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  editProfileBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
-  settingsRow: {
+  groupLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  groupCard: {
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  settingRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
   },
   settingLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
+  settingIcon: {
+    marginRight: 12,
   },
   settingTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#ffffff',
   },
-  settingDesc: {
-    fontSize: 11,
-    color: '#8e9192',
+  settingSub: {
+    fontSize: 12,
     marginTop: 2,
   },
-  listItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  listLeft: {
+  settingRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
-  listTitle: {
+  settingValue: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#ffffff',
+    fontWeight: '700',
   },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 180, 171, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 180, 171, 0.15)',
-    borderRadius: 18,
-    height: 52,
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  logoutText: {
-    color: '#ffb4ab',
-    fontSize: 14,
-    fontWeight: '600',
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 4,
   },
   versionText: {
-    fontSize: 11,
-    color: '#8e9192',
     textAlign: 'center',
+    fontSize: 12,
+    marginTop: 8,
+    marginBottom: 24,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'flex-end',
-  },
-  modalOverlayCenter: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+  modalSaveBtn: {
+    height: 50,
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#0A0A0A',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    maxHeight: '80%',
-    paddingBottom: 40,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  modalContentLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  modalBody: {
-    padding: 24,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    color: '#8e9192',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
     marginTop: 12,
   },
-  modalInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 14,
-    height: 52,
-    paddingHorizontal: 16,
-    color: '#ffffff',
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  modalInputLight: {
-    backgroundColor: '#f2f2f7',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    color: '#0A0A0A',
-  },
-  saveBtn: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    height: 52,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  saveBtnText: {
-    color: '#0A0A0A',
-    fontSize: 14,
+  modalSaveText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '700',
   },
-  currencyRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  currencyRowLight: {
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  activeCurrencyRow: {},
-  currencyCodeText: {
-    fontSize: 15,
-    color: '#ffffff',
-    fontWeight: '500',
-  },
-  activeCurrencyText: {
-    color: '#a6c8ff',
-    fontWeight: '700',
-  },
-  manageAccRow: {
+  currencyItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  manageAccRowLight: {
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  manageAccName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  manageAccDetails: {
-    fontSize: 11,
-    color: '#8e9192',
-    marginTop: 2,
-  },
-  manageAccBal: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 4,
-  },
-  manageAccActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionBtn: {
-    padding: 8,
-  },
-  formCard: {
-    backgroundColor: '#0A0A0A',
-    width: '100%',
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  formCardLight: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  typeOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-    marginTop: 4,
-  },
-  typeOptionPill: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
   },
-  activeTypePill: {
-    backgroundColor: '#a6c8ff',
-    borderColor: '#a6c8ff',
+  currencyName: {
+    fontSize: 15,
   },
-  typeOptionText: {
-    fontSize: 12,
-    color: '#8e9192',
-    fontWeight: '500',
-  },
-  activeTypeText: {
-    color: '#0A0A0A',
-    fontWeight: '600',
-  },
-  formActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-  },
-  formCancelBtn: {
-    flex: 1,
-    borderRadius: 14,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  formSaveBtn: {
-    flex: 1,
-    borderRadius: 14,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-  },
-  cancelBtnText: {
-    color: '#8e9192',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  saveBtnTextDark: {
-    color: '#0A0A0A',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  avatarPresetGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingVertical: 10,
-    marginBottom: 20,
-  },
-  avatarPresetOption: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  }
 });

@@ -22,19 +22,23 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList isDark={isDark}>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton icon="home" label="Home" isDark={isDark} colors={colors} />
+            <TabButton icon="dashboard" label="Home" isDark={isDark} colors={colors} />
           </TabTrigger>
 
           <TabTrigger name="history" href="/history" asChild>
-            <TabButton icon="history" label="History" isDark={isDark} colors={colors} />
+            <TabButton icon="receipt-long" label="Txns" isDark={isDark} colors={colors} />
           </TabTrigger>
 
-          <TabTrigger name="analytics" href="/analytics" asChild>
-            <TabButton icon="bar-chart" label="Stats" isDark={isDark} colors={colors} />
+          <TabTrigger name="accounts" href={'/accounts' as any} asChild>
+            <TabButton icon="account-balance-wallet" label="Vault" isDark={isDark} colors={colors} />
           </TabTrigger>
 
           <TabTrigger name="goals" href="/goals" asChild>
-            <TabButton icon="flag" label="Goals" isDark={isDark} colors={colors} />
+            <TabButton icon="credit-score" label="EMI" isDark={isDark} colors={colors} />
+          </TabTrigger>
+
+          <TabTrigger name="analytics" href="/analytics" asChild>
+            <TabButton icon="pie-chart" label="Stats" isDark={isDark} colors={colors} />
           </TabTrigger>
 
           <TabTrigger name="profile" href="/profile" asChild>
@@ -75,7 +79,7 @@ export function TabButton({ icon, label, isFocused, isDark, colors, ...props }: 
     >
       <MaterialIcons
         name={icon}
-        size={22}
+        size={20}
         color={isFocused ? activeColor : inactiveColor}
       />
       <Text
@@ -116,9 +120,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    paddingTop: 8,
+    paddingHorizontal: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingTop: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -129,8 +133,8 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     borderRadius: 32,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -149,14 +153,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     borderRadius: 9999,
     overflow: 'hidden',
-    marginHorizontal: 2,
+    marginHorizontal: 1,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
     marginTop: 2,
   },

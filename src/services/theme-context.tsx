@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useColorScheme, ColorSchemeName } from 'react-native';
-import { getSetting, setSetting } from './db';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { useColorScheme } from 'react-native';
+import { getSecureItem, saveSecureItem } from './secure-storage';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -8,55 +8,49 @@ interface ThemeContextType {
   themeMode: ThemeMode;
   isDark: boolean;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   themeMode: 'dark',
   isDark: true,
   setThemeMode: async () => {},
+  toggleTheme: () => {},
 });
 
 export function CustomThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
-  const [isDark, setIsDark] = useState(true);
 
-  // Load saved theme once on mount
   useEffect(() => {
     let cancelled = false;
-    getSetting('theme', 'dark').then((saved) => {
+    getSecureItem('theme_preference').then((saved) => {
       if (cancelled) return;
-      const mode = saved as ThemeMode;
+      const mode = (saved as ThemeMode) || 'dark';
       setThemeModeState(mode);
-      if (mode === 'system') {
-        setIsDark(systemScheme === 'dark');
-      } else {
-        setIsDark(mode === 'dark');
-      }
-    }).catch((e) => console.error('Failed to load theme:', e));
+    }).catch(() => {});
     return () => { cancelled = true; };
-  }, [systemScheme]); // only on mount
+  }, []);
 
-  // Sync system scheme changes when mode is 'system'
-  useEffect(() => {
+  const isDark = useMemo(() => {
     if (themeMode === 'system') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsDark(systemScheme === 'dark');
+      return systemScheme === 'dark';
     }
-  }, [systemScheme, themeMode]);
+    return themeMode === 'dark';
+  }, [themeMode, systemScheme]);
 
   const setThemeMode = useCallback(async (mode: ThemeMode) => {
-    await setSetting('theme', mode);
+    await saveSecureItem('theme_preference', mode);
     setThemeModeState(mode);
-    if (mode === 'system') {
-      setIsDark(systemScheme === 'dark');
-    } else {
-      setIsDark(mode === 'dark');
-    }
-  }, [systemScheme]);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    const next = isDark ? 'light' : 'dark';
+    setThemeMode(next);
+  }, [isDark, setThemeMode]);
 
   return (
-    <ThemeContext.Provider value={{ themeMode, isDark, setThemeMode }}>
+    <ThemeContext.Provider value={{ themeMode, isDark, setThemeMode, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -64,9 +58,4 @@ export function CustomThemeProvider({ children }: { children: React.ReactNode })
 
 export function useTheme(): ThemeContextType {
   return useContext(ThemeContext);
-}
-
-// Kept for backward compatibility with _layout.tsx call
-export async function initializeTheme(_systemScheme: ColorSchemeName) {
-  // No-op: CustomThemeProvider handles initialization
 }

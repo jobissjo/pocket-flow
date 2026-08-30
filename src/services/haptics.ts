@@ -1,12 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 
-/**
- * Cross-platform Safe Haptics Utility.
- * Provides rich tactile feedback on iOS & Android devices.
- * Gracefully silent on Web.
- */
-
 export async function hapticLight(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
@@ -21,6 +15,8 @@ export async function hapticMedium(): Promise<void> {
   } catch (_) {}
 }
 
+export const hapticImpactMedium = hapticMedium;
+
 export async function hapticHeavy(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
@@ -34,6 +30,8 @@ export async function hapticSuccess(): Promise<void> {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   } catch (_) {}
 }
+
+export const hapticNotificationSuccess = hapticSuccess;
 
 export async function hapticWarning(): Promise<void> {
   if (Platform.OS === 'web') return;

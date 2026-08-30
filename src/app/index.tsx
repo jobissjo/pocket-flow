@@ -1,894 +1,864 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
-  StatusBar,
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  TouchableOpacity,
+  Platform,
   ActivityIndicator,
-  Dimensions,
-  Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused, useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
-
-import { getDatabase, Transaction, getSetting, autoApplySubscriptions, getSubscriptions, Subscription, autoApplySIPs, getInvestments, isOnboardingCompleted, useDatabaseSubscription, getCategoryBudgetUtilization, getDueRecurringItems, confirmAndPostRecurringItem, DueRecurringItem } from '@/services/db';
-import AddTransactionModal from '@/components/add-transaction-modal';
-import AIAssistantModal from '@/components/ai-assistant-modal';
-import WalletDetailsModal from '@/components/wallet-details-modal';
-import SubscriptionsModal from '@/components/subscriptions-modal';
-import InvestmentsModal from '@/components/investments-modal';
-import BudgetsModal from '@/components/budgets-modal';
-import OnboardingModal from '@/components/onboarding-modal';
-import { rescheduleAllReminders } from '@/services/notifications';
-
-import { useCurrency } from '@/services/currency';
-import { useTheme } from '@/services/theme-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/components/ui/glass-card';
+import { StatCard } from '@/components/ui/stat-card';
+import { TransactionFormModal } from '@/components/forms/transaction-form-modal';
+import { AccountFormModal } from '@/components/forms/account-form-modal';
+import { CardFormModal } from '@/components/forms/card-form-modal';
+import { EMIFormModal } from '@/components/forms/emi-form-modal';
+import { dashboardService } from '@/services/dashboard';
+import { accountService } from '@/services/accounts';
+import { creditCardService } from '@/services/creditCards';
+import { emiService } from '@/services/emi';
+import {
+  SummaryResponse,
+  TransactionResponse,
+  AccountResponse,
+  CreditCardResponse,
+  EMIResponse,
+} from '@/services/types';
+import { useAuth } from '@/services/auth-context';
+import { useTheme } from '@/services/theme-context';
+import { useCurrency } from '@/services/currency';
+import { hapticImpactMedium, hapticNotificationSuccess, hapticLight } from '@/services/haptics';
 
-const { width } = Dimensions.get('window');
-
-export default function HomeDashboard() {
-  const isFocused = useIsFocused();
+export default function DashboardScreen() {
   const router = useRouter();
-  const { formatAmount } = useCurrency();
+  const { user } = useAuth();
   const { isDark } = useTheme();
+  const { formatAmount } = useCurrency();
+
+  const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [totalBalance, setTotalBalance] = useState(0);
-  const [incomeSum, setIncomeSum] = useState(0);
-  const [expenseSum, setExpenseSum] = useState(0);
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [budgets, setBudgets] = useState<{ category: string; spent: number; limit: number }[]>([]);
-  const [username, setUsername] = useState('Alex');
-  const [portfolioVal, setPortfolioVal] = useState(0);
-  const [avatar, setAvatar] = useState('👤');
-  const [pendingDueItems, setPendingDueItems] = useState<DueRecurringItem[]>([]);
 
-  // Modal Visibility States
-  const [addTxVisible, setAddTxVisible] = useState(false);
-  const [addTxType, setAddTxType] = useState<'income' | 'expense'>('expense');
-  const [assistantVisible, setAssistantVisible] = useState(false);
-  const [walletDetailsVisible, setWalletDetailsVisible] = useState(false);
-  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
-  const [subsVisible, setSubsVisible] = useState(false);
-  const [upcomingBills, setUpcomingBills] = useState<Subscription[]>([]);
-  const [investmentsVisible, setInvestmentsVisible] = useState(false);
-  const [budgetsModalVisible, setBudgetsModalVisible] = useState(false);
-  const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [recentTxns, setRecentTxns] = useState<TransactionResponse[]>([]);
+  const [accounts, setAccounts] = useState<AccountResponse[]>([]);
+  const [cards, setCards] = useState<CreditCardResponse[]>([]);
+  const [upcomingEMIs, setUpcomingEMIs] = useState<EMIResponse[]>([]);
 
-  const loadData = useCallback(async () => {
+  // Modals state
+  const [showAddTxn, setShowAddTxn] = useState(false);
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showAddCard, setShowAddCard] = useState(false);
+  const [showAddEMI, setShowAddEMI] = useState(false);
+  const [selectedTxn, setSelectedTxn] = useState<TransactionResponse | null>(null);
+
+  const loadDashboardData = useCallback(async () => {
     try {
-      const isCompleted = await isOnboardingCompleted();
-      if (!isCompleted) {
-        setOnboardingVisible(true);
-      }
+      const [sum, txns, accs, cc, emis] = await Promise.all([
+        dashboardService.getSummary().catch(() => null),
+        dashboardService.getRecentTransactions(8).catch(() => []),
+        accountService.listAccounts().catch(() => []),
+        creditCardService.listCreditCards().catch(() => []),
+        dashboardService.getUpcomingEMI(5).catch(() => []),
+      ]);
 
-      await autoApplySubscriptions();
-      await autoApplySIPs();
-      await rescheduleAllReminders();
-
-      const db = await getDatabase();
-
-      // 1. Fetch total balance across all accounts
-      const accRows = await db.getAllAsync<{ balance: number }>('SELECT balance FROM accounts');
-      const total = accRows.reduce((acc, row) => acc + row.balance, 0);
-      setTotalBalance(total);
-
-      // 2. Compute monthly income and expenses
-      const now = new Date();
-      const firstDayStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-      const incomeRow = await db.getFirstAsync<{ total: number }>(
-        `SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND date >= ?`,
-        [firstDayStr]
-      );
-      setIncomeSum(incomeRow?.total || 0);
-
-      const expenseRow = await db.getFirstAsync<{ total: number }>(
-        `SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND date >= ?`,
-        [firstDayStr]
-      );
-      setExpenseSum(expenseRow?.total || 0);
-
-      // 3. Fetch recent transactions
-      const txs = await db.getAllAsync<Transaction>(
-        'SELECT * FROM transactions ORDER BY date DESC LIMIT 3'
-      );
-      setRecentTransactions(txs);
-
-      // 4. Compute dynamic budget utilization
-      const budgetList = await getCategoryBudgetUtilization();
-      setBudgets(budgetList);
-
-      // 5. Fetch upcoming bills (next 30 days)
-      const allSubs = await getSubscriptions();
-      const todayStr = new Date().toISOString().split('T')[0];
-      const maxDate = new Date();
-      maxDate.setDate(maxDate.getDate() + 30);
-      const maxDateStr = maxDate.toISOString().split('T')[0];
-
-      const upcoming = allSubs.filter(s => 
-        s.status === 'active' && 
-        s.next_billing_date >= todayStr && 
-        s.next_billing_date <= maxDateStr
-      );
-      setUpcomingBills(upcoming);
-
-      // Load investment portfolio valuation
-      const invs = await getInvestments();
-      const val = invs.reduce((sum, inv) => sum + (inv.shares * inv.current_price), 0);
-      setPortfolioVal(val);
-
-      // Load due recurring items requiring 1-tap confirmation
-      const dueList = await getDueRecurringItems();
-      setPendingDueItems(dueList);
-
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      if (sum) setSummary(sum);
+      setRecentTxns(txns);
+      setAccounts(accs);
+      setCards(cc);
+      setUpcomingEMIs(emis);
+    } catch (err) {
+      console.log('Error loading dashboard data:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  const handleConfirmRecurringPayment = async (item: DueRecurringItem) => {
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    hapticImpactMedium();
+    loadDashboardData();
+  };
+
+  const handleMarkEMIPaid = async (emiId: string) => {
     try {
-      await confirmAndPostRecurringItem(item);
-      await loadData();
-    } catch (err) {
-      console.error('Error confirming payment:', err);
+      hapticImpactMedium();
+      await emiService.markPaid(emiId);
+      hapticNotificationSuccess();
+      loadDashboardData();
+    } catch (err: any) {
+      console.log('Error marking EMI paid:', err);
     }
   };
 
-  useDatabaseSubscription(loadData);
+  const greeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
 
-  useEffect(() => {
-    if (isFocused) {
-      loadData();
-    }
-  }, [isFocused, loadData]);
-
-  if (loading) {
-    return (
-      <View style={[styles.loadingContainer, !isDark && { backgroundColor: '#F2F2F7' }]}>
-        <ActivityIndicator size="large" color={isDark ? "#ffffff" : "#0A0A0A"} />
-      </View>
-    );
-  }
+  const totalBalance = summary?.total_balance ?? 0;
+  const totalIncome = summary?.total_income ?? 0;
+  const totalExpense = summary?.total_expenses ?? 0;
+  const ccOutstanding = summary?.total_credit_card_outstanding ?? 0;
+  const savingsRate = summary?.savings_percentage ?? 0;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Header bar */}
+    <View style={[styles.screen, { backgroundColor: isDark ? '#08080C' : '#F6F6F9' }]}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={isDark ? '#3B82F6' : '#2563EB'}
+          />
+        }
+      >
+        {/* Header Bar */}
         <View style={styles.header}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={[styles.greeting, !isDark && styles.textSecondaryLight]}>Good morning, {username}</Text>
-            <Text style={[styles.headerTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">Your financial summary</Text>
+          <View>
+            <Text style={[styles.greeting, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+              {greeting()},
+            </Text>
+            <Text style={[styles.userName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+              {user?.full_name || 'User'}
+            </Text>
           </View>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              style={[styles.notificationBtn, !isDark && { backgroundColor: 'rgba(255, 255, 255, 0.7)', borderColor: 'rgba(0,0,0,0.05)' }, { marginRight: 8 }]} 
-              onPress={() => setAssistantVisible(true)}
-            >
-              <MaterialIcons name="auto-awesome" size={24} color={isDark ? "#a6c8ff" : "#208aef"} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.notificationBtn, !isDark && { backgroundColor: 'rgba(255, 255, 255, 0.7)', borderColor: 'rgba(0,0,0,0.05)' }]} 
-              onPress={() => router.push('/profile')}
-            >
-              <Text style={{ fontSize: 20 }}>{avatar}</Text>
-            </TouchableOpacity>
-          </View>
+
+          <TouchableOpacity
+            onPress={() => {
+              hapticLight();
+              setShowAddTxn(true);
+            }}
+            style={styles.quickAddHeaderBtn}
+          >
+            <Ionicons name="add" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
 
-        {/* Quick Start Guide Card */}
-        <GlassCard style={{ marginBottom: 16, padding: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <MaterialIcons name="auto-awesome" size={18} color="#3B82F6" />
-              <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? '#FFFFFF' : '#0F172A' }}>
-                Quick Start Guide
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => setOnboardingVisible(true)}>
-              <Text style={{ fontSize: 12, color: '#3B82F6', fontWeight: '600' }}>Replay Guide</Text>
-            </TouchableOpacity>
+        {loading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color="#3B82F6" />
           </View>
-
-          <View style={{ gap: 8 }}>
-            <TouchableOpacity 
-              onPress={() => { setAddTxType('expense'); setAddTxVisible(true); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
-            >
-              <MaterialIcons name="add-circle-outline" size={20} color="#10B981" />
-              <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#CBD5E1' : '#334155' }}>Log your first Income or Expense</Text>
-              <MaterialIcons name="chevron-right" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => setAssistantVisible(true)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
-            >
-              <MaterialIcons name="smart-toy" size={20} color="#8B5CF6" />
-              <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#CBD5E1' : '#334155' }}>Ask AI Assistant for advice</Text>
-              <MaterialIcons name="chevron-right" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => router.push('/goals')}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
-            >
-              <MaterialIcons name="flag" size={20} color="#F59E0B" />
-              <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#CBD5E1' : '#334155' }}>Set up a Savings Goal</Text>
-              <MaterialIcons name="chevron-right" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-          </View>
-        </GlassCard>
-
-        {/* Investment Portfolio Summary Card */}
-        <GlassCard 
-          style={styles.investmentCard}
-          onPress={() => setInvestmentsVisible(true)}
-        >
-          <View style={styles.investmentHeader}>
-            <View style={styles.investmentIconContainer}>
-              <MaterialIcons name="donut-large" size={20} color={isDark ? "#a6c8ff" : "#208aef"} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.investmentLabel}>Investment Portfolio</Text>
-              <Text style={[styles.investmentVal, !isDark && styles.textLight]}>
-                {formatAmount(portfolioVal)}
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8e9192" />
-          </View>
-        </GlassCard>
-
-        {/* Pending Due Payments Banner */}
-        {pendingDueItems.length > 0 && (
-          <GlassCard style={{ marginBottom: 16, backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <MaterialIcons name="notifications-active" size={18} color="#ef4444" />
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#ef4444', textTransform: 'uppercase' }}>
-                    {pendingDueItems.length} Due {pendingDueItems.length === 1 ? 'Payment' : 'Payments'}
-                  </Text>
+        ) : (
+          <>
+            {/* Primary Net Worth / Balance Hero Card */}
+            <GlassCard style={styles.heroCard}>
+              <View style={styles.heroHeader}>
+                <Text style={[styles.heroLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                  TOTAL NET BALANCE
+                </Text>
+                <View style={styles.savingsBadge}>
+                  <Ionicons name="trending-up" size={12} color="#10B981" style={{ marginRight: 4 }} />
+                  <Text style={styles.savingsText}>{savingsRate.toFixed(1)}% saved</Text>
                 </View>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: isDark ? '#ffffff' : '#0f172a' }}>
-                  {pendingDueItems[0].name} ({formatAmount(pendingDueItems[0].amount)})
-                </Text>
-                <Text style={{ fontSize: 12, color: isDark ? '#94a3b8' : '#64748b', marginTop: 2 }}>
-                  Due {pendingDueItems[0].dueDate} • Tap to auto-post
-                </Text>
               </View>
+
+              <Text
+                style={[styles.heroAmount, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatAmount(totalBalance)}
+              </Text>
+
+              <View style={styles.heroFooter}>
+                <View style={styles.heroMetric}>
+                  <View style={[styles.metricDot, { backgroundColor: '#10B981' }]} />
+                  <View>
+                    <Text style={[styles.metricLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Income</Text>
+                    <Text style={[styles.metricValue, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                      {formatAmount(totalIncome)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.heroDivider} />
+
+                <View style={styles.heroMetric}>
+                  <View style={[styles.metricDot, { backgroundColor: '#EF4444' }]} />
+                  <View>
+                    <Text style={[styles.metricLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Expenses</Text>
+                    <Text style={[styles.metricValue, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                      {formatAmount(totalExpense)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </GlassCard>
+
+            {/* Quick Action Pills */}
+            <View style={styles.quickActionsRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  hapticLight();
+                  setShowAddTxn(true);
+                }}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' },
+                ]}
+              >
+                <Ionicons name="swap-horizontal" size={20} color="#3B82F6" />
+                <Text style={[styles.quickActionText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                  + Transaction
+                </Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
-                style={{
-                  backgroundColor: '#ef4444',
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 14,
+                onPress={() => {
+                  hapticLight();
+                  setShowAddAccount(true);
                 }}
-                onPress={() => handleConfirmRecurringPayment(pendingDueItems[0])}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' },
+                ]}
               >
-                <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }}>Pay & Post</Text>
+                <Ionicons name="wallet-outline" size={20} color="#10B981" />
+                <Text style={[styles.quickActionText, { color: isDark ? '#6EE7B7' : '#047857' }]}>
+                  + Bank Account
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  hapticLight();
+                  setShowAddCard(true);
+                }}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFFBEB' },
+                ]}
+              >
+                <Ionicons name="card-outline" size={20} color="#F59E0B" />
+                <Text style={[styles.quickActionText, { color: isDark ? '#FCD34D' : '#B45309' }]}>
+                  + Credit Card
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  hapticLight();
+                  setShowAddEMI(true);
+                }}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: isDark ? 'rgba(168, 85, 247, 0.15)' : '#FAF5FF' },
+                ]}
+              >
+                <Ionicons name="calendar-outline" size={20} color="#A855F7" />
+                <Text style={[styles.quickActionText, { color: isDark ? '#D8B4FE' : '#6B21A8' }]}>
+                  + EMI Plan
+                </Text>
               </TouchableOpacity>
             </View>
-          </GlassCard>
-        )}
 
-        {/* Balance Card */}
-        <GlassCard>
-          <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Total Balance</Text>
-            <MaterialIcons name="info-outline" size={18} color="#8e9192" />
-          </View>
-          <Text style={[styles.balanceAmount, !isDark && styles.textLight]}>
-            {formatAmount(totalBalance)}
-          </Text>
-          
-          <View style={styles.balanceTrend}>
-            <View style={styles.trendPill}>
-              <MaterialIcons name="arrow-upward" size={14} color="#a6c8ff" />
-              <Text style={styles.trendText}>2.4%</Text>
+            {/* Stat Row */}
+            <View style={styles.statsGrid}>
+              <StatCard
+                title="Credit Outstanding"
+                amount={formatAmount(ccOutstanding)}
+                subtitle="All active cards"
+                iconName="card"
+                iconColor="#F59E0B"
+                iconBg="rgba(245, 158, 11, 0.15)"
+                style={{ flex: 1, marginRight: 8 }}
+                onPress={() => router.push('/accounts' as any)}
+              />
+              <StatCard
+                title="Active Accounts"
+                amount={String(accounts.length + cards.length)}
+                subtitle="Banks & Cards"
+                iconName="business"
+                iconColor="#3B82F6"
+                iconBg="rgba(59, 130, 246, 0.15)"
+                style={{ flex: 1, marginLeft: 8 }}
+                onPress={() => router.push('/accounts' as any)}
+              />
             </View>
-            <Text style={styles.trendLabel}>from last month</Text>
-          </View>
 
-          <View style={[styles.balanceDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }]} />
-
-          <View style={styles.statsGrid}>
-            <View style={styles.statCol}>
-              <Text style={styles.statLabel}>Income</Text>
-              <Text style={[styles.statValue, isDark ? styles.incomeText : styles.incomeTextLight]}>
-                {formatAmount(incomeSum, 0)}
-              </Text>
-            </View>
-            <View style={styles.statCol}>
-              <Text style={styles.statLabel}>Expenses</Text>
-              <Text style={[styles.statValue, isDark ? styles.expenseText : styles.expenseTextLight]}>
-                {formatAmount(expenseSum, 0)}
-              </Text>
-            </View>
-          </View>
-        </GlassCard>
-
-        {/* AI Quick Insight Banner */}
-        <TouchableOpacity 
-          style={[styles.aiBanner, !isDark && styles.aiBannerLight]}
-          onPress={() => setAssistantVisible(true)}
-        >
-          <View style={[styles.aiIconContainer, !isDark && { backgroundColor: 'rgba(32, 138, 239, 0.12)' }]}>
-            <MaterialIcons name="auto-awesome" size={18} color={isDark ? "#a6c8ff" : "#208aef"} />
-          </View>
-          <Text style={[styles.aiText, !isDark && styles.aiTextLight]} numberOfLines={2}>
-            You spent 15% less on dining this week compared to last month. Ask me for recommendations!
-          </Text>
-        </TouchableOpacity>
-
-        {/* Bento Grid Action Cards */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Quick Actions</Text>
-        </View>
-        
-        <View style={styles.actionsGrid}>
-          <GlassCard 
-            style={styles.actionCard}
-            onPress={() => { setAddTxType('expense'); setAddTxVisible(true); }}
-          >
-            <View style={[styles.actionIconBg, { backgroundColor: 'rgba(255, 180, 171, 0.1)' }]}>
-              <MaterialIcons name="remove-circle-outline" size={24} color={isDark ? "#ffb4ab" : "#ba1a1a"} />
-            </View>
-             <Text style={[styles.actionText, !isDark && styles.textLight]}>Add Expense</Text>
-          </GlassCard>
-
-          <GlassCard 
-            style={styles.actionCard}
-            onPress={() => { setAddTxType('income'); setAddTxVisible(true); }}
-          >
-            <View style={[styles.actionIconBg, { backgroundColor: 'rgba(166, 200, 255, 0.1)' }]}>
-              <MaterialIcons name="add-circle-outline" size={24} color={isDark ? "#a6c8ff" : "#208aef"} />
-            </View>
-            <Text style={[styles.actionText, !isDark && styles.textLight]}>Add Income</Text>
-          </GlassCard>
-
-          <GlassCard 
-            style={styles.actionCard}
-            onPress={() => setWalletDetailsVisible(true)}
-          >
-            <View style={[styles.actionIconBg, { backgroundColor: 'rgba(158, 119, 237, 0.1)' }]}>
-              <MaterialIcons name="account-balance-wallet" size={24} color="#9e77ed" />
-            </View>
-            <Text style={[styles.actionText, !isDark && styles.textLight]}>Accounts</Text>
-          </GlassCard>
-
-          <GlassCard 
-            style={styles.actionCard}
-            onPress={() => setAssistantVisible(true)}
-          >
-            <View style={[styles.actionIconBg, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
-              <MaterialIcons name="forum" size={24} color={isDark ? "#ffffff" : "#0A0A0A"} />
-            </View>
-            <Text style={[styles.actionText, !isDark && styles.textLight]}>WealthAI</Text>
-          </GlassCard>
-        </View>
-
-        {/* Budgets Progress */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Budgets</Text>
-          <TouchableOpacity onPress={() => setBudgetsModalVisible(true)}>
-            <Text style={styles.sectionLink}>Manage limits</Text>
-          </TouchableOpacity>
-        </View>
-
-        <GlassCard>
-          {budgets.map((b, idx) => {
-            const percent = Math.min(100, Math.round((b.spent / b.limit) * 100));
-            // Choose color based on percentage
-            const barColor = percent > 90 ? '#ffb4ab' : percent > 75 ? '#9e77ed' : '#a6c8ff';
-            
-            return (
-              <View key={b.category} style={[styles.budgetRow, idx > 0 && styles.budgetRowSpacer]}>
-                <View style={styles.budgetMeta}>
-                  <Text style={[styles.budgetName, !isDark && styles.textLight]}>{b.category}</Text>
-                  <Text style={[styles.budgetValue, !isDark && styles.textSecondaryLight]}>
-                    {formatAmount(b.spent, 0)} / {formatAmount(b.limit, 0)}
+            {/* Accounts & Cards Preview Carousel */}
+            {(accounts.length > 0 || cards.length > 0) && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                    My Accounts & Cards
                   </Text>
+                  <TouchableOpacity onPress={() => router.push('/accounts' as any)}>
+                    <Text style={[styles.seeAllText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                      View All
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={[styles.progressBarBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.06)' }]}>
-                  <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: barColor }]} />
-                </View>
-              </View>
-            );
-          })}
-        </GlassCard>
 
-        {/* Recent Transactions */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Recent Transactions</Text>
-          <TouchableOpacity onPress={() => router.push('/history')}>
-            <Text style={styles.sectionLink}>View all</Text>
-          </TouchableOpacity>
-        </View>
-
-        <GlassCard style={{ paddingBottom: 8 }}>
-          {recentTransactions.length === 0 ? (
-            <Text style={[styles.emptyText, !isDark && styles.textSecondaryLight]}>No recent transactions.</Text>
-          ) : (
-            recentTransactions.map((tx, idx) => {
-              const isExpense = tx.amount < 0;
-              const formattedAmt = formatAmount(tx.amount);
-              
-              let iconName = 'receipt';
-              if (tx.category.toLowerCase().includes('food') || tx.category.toLowerCase().includes('dining')) {
-                iconName = 'local-cafe';
-              } else if (tx.category.toLowerCase().includes('grocery')) {
-                iconName = 'shopping-basket';
-              } else if (tx.category.toLowerCase().includes('transport') || tx.category.toLowerCase().includes('travel')) {
-                iconName = 'directions-car';
-              } else if (tx.category.toLowerCase().includes('salary')) {
-                iconName = 'payments';
-              } else if (tx.category.toLowerCase().includes('transfer')) {
-                iconName = 'sync-alt';
-              } else if (tx.category.toLowerCase().includes('housing')) {
-                iconName = 'home';
-              }
- 
-              return (
-                <TouchableOpacity 
-                  key={tx.id} 
-                  style={[styles.txRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.05)' }]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setEditingTx(tx);
-                    setAddTxVisible(true);
-                  }}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.cardsScroll}
                 >
-                  <View style={styles.txLeft}>
-                    <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
-                      <MaterialIcons name={iconName as any} size={20} color={isDark ? "#ffffff" : "#0A0A0A"} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.txTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">{tx.note || tx.category}</Text>
-                      <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
-                        {new Date(tx.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  {accounts.map((acc) => (
+                    <GlassCard key={acc.id} style={styles.accountCard} onPress={() => router.push('/accounts' as any)}>
+                      <View style={styles.accCardTop}>
+                        <View style={styles.bankBadge}>
+                          <Ionicons name="wallet" size={14} color="#3B82F6" />
+                          <Text style={styles.bankName}>{acc.bank_name}</Text>
+                        </View>
+                        <Text style={[styles.accountLastFour, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          ••• {acc.last_four}
+                        </Text>
+                      </View>
+                      <Text style={[styles.accountName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                        {acc.name}
                       </Text>
+                      <Text style={[styles.accountBalance, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                        {formatAmount(acc.balance)}
+                      </Text>
+                    </GlassCard>
+                  ))}
+
+                  {cards.map((card) => (
+                    <GlassCard key={card.id} style={styles.accountCard} onPress={() => router.push('/accounts' as any)}>
+                      <View style={styles.accCardTop}>
+                        <View style={[styles.bankBadge, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                          <Ionicons name="card" size={14} color="#F59E0B" />
+                          <Text style={[styles.bankName, { color: '#F59E0B' }]}>{card.provider}</Text>
+                        </View>
+                        <Text style={[styles.accountLastFour, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          ••• {card.last_four}
+                        </Text>
+                      </View>
+                      <Text style={[styles.accountName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                        {card.card_name}
+                      </Text>
+                      <Text style={[styles.accountBalance, { color: '#EF4444' }]}>
+                        {formatAmount(card.outstanding_amount)}
+                      </Text>
+                      <Text style={[styles.cardLimitText, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+                        Avail: {formatAmount(card.available_limit)}
+                      </Text>
+                    </GlassCard>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Upcoming EMIs */}
+            {upcomingEMIs.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                    Upcoming EMIs & Loans
+                  </Text>
+                  <TouchableOpacity onPress={() => router.push('/goals')}>
+                    <Text style={[styles.seeAllText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                      Manage
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {upcomingEMIs.map((emi) => (
+                  <GlassCard key={emi.id} style={styles.emiCard}>
+                    <View style={styles.emiLeft}>
+                      <View style={styles.emiIconBox}>
+                        <Ionicons name="layers-outline" size={20} color="#A855F7" />
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={[styles.emiTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                          {emi.name}
+                        </Text>
+                        <Text style={[styles.emiSub, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          Due on day {emi.due_day} • {emi.paid_installments}/{emi.total_installments} Paid
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                  <Text style={[styles.txAmount, isExpense ? (isDark ? styles.expenseText : styles.expenseTextLight) : (isDark ? styles.incomeText : styles.incomeTextLight)]}>
-                    {formattedAmt}
+
+                    <View style={styles.emiRight}>
+                      <Text style={[styles.emiAmount, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                        {formatAmount(emi.monthly_emi_amount)}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => handleMarkEMIPaid(emi.id)}
+                        style={styles.markPaidButton}
+                      >
+                        <Text style={styles.markPaidText}>Pay</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </GlassCard>
+                ))}
+              </View>
+            )}
+
+            {/* Recent Transactions List */}
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                  Recent Activity
+                </Text>
+                <TouchableOpacity onPress={() => router.push('/history')}>
+                  <Text style={[styles.seeAllText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                    View All
                   </Text>
                 </TouchableOpacity>
-              );
-            })
-          )}
-        </GlassCard>
+              </View>
 
-        {/* Upcoming Bills Widget */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Upcoming Bills</Text>
-          <TouchableOpacity onPress={() => setSubsVisible(true)}>
-            <Text style={styles.sectionLink}>Manage</Text>
-          </TouchableOpacity>
-        </View>
-
-        <GlassCard style={{ paddingBottom: 8, marginBottom: 20 }}>
-          {upcomingBills.length === 0 ? (
-            <Text style={[styles.emptyText, !isDark && styles.textSecondaryLight, { paddingVertical: 12 }]}>No bills due in the next 30 days.</Text>
-          ) : (
-            upcomingBills.slice(0, 3).map((item) => {
-              const formattedDate = new Date(item.next_billing_date).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric'
-              });
-              
-              let iconName = 'card-membership';
-              if (item.category.toLowerCase().includes('entertainment')) iconName = 'tv';
-              else if (item.category.toLowerCase().includes('utilities')) iconName = 'power';
-              else if (item.category.toLowerCase().includes('rent') || item.category.toLowerCase().includes('home')) iconName = 'home';
-              else if (item.category.toLowerCase().includes('gym')) iconName = 'fitness-center';
-              else if (item.category.toLowerCase().includes('insurance')) iconName = 'shield';
-
-              return (
-                <View key={item.id} style={[styles.txRow, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.05)' }]}>
-                  <View style={styles.txLeft}>
-                    <View style={[styles.txIconContainer, !isDark && { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
-                      <MaterialIcons name={iconName as any} size={20} color={isDark ? '#a6c8ff' : '#208aef'} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.txTitle, !isDark && styles.textLight]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
-                      <Text style={[styles.txSubtitle, !isDark && styles.textSecondaryLight]}>
-                        Due: {formattedDate}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.txAmount, { color: isDark ? '#ffb4ab' : '#ba1a1a', fontWeight: 'bold' }]}>
-                    -{formatAmount(item.amount)}
+              {recentTxns.length === 0 ? (
+                <GlassCard style={styles.emptyCard}>
+                  <Ionicons
+                    name="receipt-outline"
+                    size={36}
+                    color={isDark ? '#64748B' : '#94A3B8'}
+                  />
+                  <Text style={[styles.emptyText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                    No transactions recorded yet
                   </Text>
-                </View>
-              );
-            })
-          )}
-        </GlassCard>
+                  <TouchableOpacity
+                    onPress={() => {
+                      hapticLight();
+                      setShowAddTxn(true);
+                    }}
+                    style={styles.emptyAddBtn}
+                  >
+                    <Text style={styles.emptyAddText}>+ Add First Transaction</Text>
+                  </TouchableOpacity>
+                </GlassCard>
+              ) : (
+                recentTxns.map((txn) => {
+                  const isIncome = txn.type === 'income';
+                  return (
+                    <GlassCard
+                      key={txn.id}
+                      style={styles.txnItem}
+                      onPress={() => {
+                        setSelectedTxn(txn);
+                        setShowAddTxn(true);
+                      }}
+                    >
+                      <View style={styles.txnLeft}>
+                        <View
+                          style={[
+                            styles.txnIconBox,
+                            {
+                              backgroundColor: isIncome
+                                ? 'rgba(16, 185, 129, 0.15)'
+                                : 'rgba(239, 68, 68, 0.15)',
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isIncome ? 'arrow-down' : 'arrow-up'}
+                            size={18}
+                            color={isIncome ? '#10B981' : '#EF4444'}
+                          />
+                        </View>
+                        <View style={{ marginLeft: 12, flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.txnTitle,
+                              { color: isDark ? '#FFFFFF' : '#0F172A' },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {txn.title}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.txnCategory,
+                              { color: isDark ? '#94A3B8' : '#64748B' },
+                            ]}
+                          >
+                            {txn.category_name || 'General'}
+                            {txn.account_name ? ` • ${txn.account_name}` : ''}
+                            {txn.credit_card_name ? ` • ${txn.credit_card_name}` : ''}
+                          </Text>
+                        </View>
+                      </View>
 
-        {/* Extra spacing bottom to clear the tab bar */}
-        <View style={{ height: 100 }} />
+                      <View style={styles.txnRight}>
+                        <Text
+                          style={[
+                            styles.txnAmount,
+                            { color: isIncome ? '#10B981' : '#EF4444' },
+                          ]}
+                        >
+                          {isIncome ? '+' : '-'}
+                          {formatAmount(txn.amount)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.txnDate,
+                            { color: isDark ? '#64748B' : '#94A3B8' },
+                          ]}
+                        >
+                          {new Date(txn.date).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </Text>
+                      </View>
+                    </GlassCard>
+                  );
+                })
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
 
-      <AddTransactionModal 
-        visible={addTxVisible} 
+      {/* Modals */}
+      <TransactionFormModal
+        visible={showAddTxn}
+        transactionToEdit={selectedTxn}
         onClose={() => {
-          setAddTxVisible(false);
-          setEditingTx(null);
-        }} 
-        initialType={addTxType} 
-        onSaveSuccess={loadData} 
-        editingTransaction={editingTx}
-      />
-
-      <SubscriptionsModal 
-        visible={subsVisible} 
-        onClose={() => {
-          setSubsVisible(false);
-          loadData();
-        }} 
-      />
-
-      <AIAssistantModal 
-        visible={assistantVisible} 
-        onClose={() => setAssistantVisible(false)} 
-      />
-
-      <WalletDetailsModal 
-        visible={walletDetailsVisible} 
-        onClose={() => setWalletDetailsVisible(false)} 
-      />
-
-      <InvestmentsModal 
-        visible={investmentsVisible} 
-        onClose={() => {
-          setInvestmentsVisible(false);
-          loadData();
-        }} 
-      />
-
-      <BudgetsModal
-        visible={budgetsModalVisible}
-        onClose={() => {
-          setBudgetsModalVisible(false);
-          loadData();
+          setShowAddTxn(false);
+          setSelectedTxn(null);
+        }}
+        onSuccess={() => {
+          loadDashboardData();
         }}
       />
 
-      <OnboardingModal
-        visible={onboardingVisible}
-        onFinish={() => {
-          setOnboardingVisible(false);
-          loadData();
+      <AccountFormModal
+        visible={showAddAccount}
+        onClose={() => setShowAddAccount(false)}
+        onSuccess={() => {
+          loadDashboardData();
         }}
       />
-    </SafeAreaView>
+
+      <CardFormModal
+        visible={showAddCard}
+        onClose={() => setShowAddCard(false)}
+        onSuccess={() => {
+          loadDashboardData();
+        }}
+      />
+
+      <EMIFormModal
+        visible={showAddEMI}
+        onClose={() => setShowAddEMI(false)}
+        onSuccess={() => {
+          loadDashboardData();
+        }}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: 'transparent',
-  },
-  textLight: {
-    color: '#0A0A0A',
-  },
-  textSecondaryLight: {
-    color: '#60646C',
-  },
-  incomeTextLight: {
-    color: '#208aef',
-  },
-  expenseTextLight: {
-    color: '#ba1a1a',
-  },
-  aiBannerLight: {
-    backgroundColor: 'rgba(32, 138, 239, 0.08)',
-    borderColor: 'rgba(32, 138, 239, 0.15)',
-  },
-  aiTextLight: {
-    color: '#208aef',
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#0A0A0A',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 10,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 36,
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 20,
+    marginBottom: 20,
   },
   greeting: {
     fontSize: 14,
-    color: '#8e9192',
-    fontFamily: Platform.OS === 'web' ? 'var(--font-display)' : 'normal',
+    fontWeight: '500',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 2,
-    fontFamily: Platform.OS === 'web' ? 'var(--font-display)' : 'normal',
+  userName: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  notificationBtn: {
+  quickAddHeaderBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(28, 28, 30, 0.7)',
+    backgroundColor: '#2563EB',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  glassCard: {
-    backgroundColor: 'rgba(28, 28, 30, 0.5)',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 5,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  balanceHeader: {
+  loaderContainer: {
+    paddingVertical: 80,
+    alignItems: 'center',
+  },
+  heroCard: {
+    padding: 22,
+    borderRadius: 24,
+    marginBottom: 16,
+  },
+  heroHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  balanceLabel: {
+  heroLabel: {
     fontSize: 12,
-    color: '#8e9192',
-    textTransform: 'uppercase',
+    fontWeight: '700',
     letterSpacing: 1,
   },
-  balanceAmount: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 8,
-    fontFamily: Platform.OS === 'web' ? 'var(--font-display)' : 'normal',
-  },
-  balanceTrend: {
+  savingsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-  },
-  trendPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(166, 200, 255, 0.15)',
-    paddingVertical: 2,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     paddingHorizontal: 8,
-    borderRadius: 12,
-    marginRight: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
-  trendText: {
+  savingsText: {
+    color: '#10B981',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  heroAmount: {
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: -1,
+    marginVertical: 4,
+  },
+  heroFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  heroMetric: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metricDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  metricLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  metricValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  heroDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 12,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  quickActionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  quickActionText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#a6c8ff',
-    marginLeft: 2,
-  },
-  trendLabel: {
-    fontSize: 12,
-    color: '#8e9192',
-  },
-  balanceDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    marginVertical: 18,
+    marginLeft: 6,
   },
   statsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  statCol: {
-    flex: 1,
+  sectionContainer: {
+    marginBottom: 20,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#8e9192',
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  incomeText: {
-    color: '#a6c8ff',
-  },
-  expenseText: {
-    color: '#ffb4ab',
-  },
-  aiBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(166, 200, 255, 0.06)',
-    borderRadius: 18,
-    padding: 14,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(166, 200, 255, 0.12)',
-  },
-  aiIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(166, 200, 255, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  aiText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#a6c8ff',
-    lineHeight: 18,
-  },
-  sectionHeaderRow: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 28,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
   },
-  sectionLink: {
+  seeAllText: {
     fontSize: 13,
-    color: '#a6c8ff',
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  actionsGrid: {
+  cardsScroll: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginHorizontal: -6,
+    gap: 12,
   },
-  actionCard: {
-    width: (width - 52) / 2,
+  accountCard: {
+    width: 180,
     padding: 16,
-    marginHorizontal: 6,
-    marginBottom: 12,
-    alignItems: 'center',
+    borderRadius: 20,
   },
-  actionIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    justifyContent: 'center',
+  accCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  actionText: {
+  bankBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  bankName: {
+    color: '#3B82F6',
+    fontSize: 10,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  accountLastFour: {
+    fontSize: 11,
+  },
+  accountName: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#ffffff',
+    marginBottom: 4,
   },
-  budgetRow: {
-    width: '100%',
+  accountBalance: {
+    fontSize: 18,
+    fontWeight: '800',
   },
-  budgetRowSpacer: {
-    marginTop: 16,
+  cardLimitText: {
+    fontSize: 11,
+    marginTop: 4,
   },
-  budgetMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  budgetName: {
-    fontSize: 14,
-    color: '#ffffff',
-    fontWeight: '500',
-  },
-  budgetValue: {
-    fontSize: 12,
-    color: '#8e9192',
-  },
-  progressBarBg: {
-    height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  txRow: {
+  emiCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+    padding: 14,
+    borderRadius: 18,
+    marginBottom: 8,
   },
-  txLeft: {
+  emiLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 16,
   },
-  txIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  emiIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(168, 85, 247, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
   },
-  txTitle: {
+  emiTitle: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#ffffff',
+    fontWeight: '700',
   },
-  txSubtitle: {
-    fontSize: 12,
-    color: '#8e9192',
+  emiSub: {
+    fontSize: 11,
     marginTop: 2,
   },
-  txAmount: {
+  emiRight: {
+    alignItems: 'flex-end',
+  },
+  emiAmount: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  markPaidButton: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  markPaidText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  txnItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 18,
+    marginBottom: 8,
+  },
+  txnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  txnIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  txnTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  txnCategory: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  txnRight: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  txnAmount: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  txnDate: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  emptyCard: {
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
   },
   emptyText: {
-    color: '#8e9192',
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  investmentCard: {
-    padding: 16,
+    fontSize: 14,
+    marginTop: 8,
     marginBottom: 16,
   },
-  investmentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  emptyAddBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
-  investmentIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(166, 200, 255, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  investmentLabel: {
-    fontSize: 10,
-    color: '#8e9192',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  investmentVal: {
-    fontSize: 16,
+  emptyAddText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 2,
   },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  }
 });

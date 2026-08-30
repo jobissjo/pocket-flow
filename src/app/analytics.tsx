@@ -1,538 +1,548 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  TouchableOpacity,
+  Platform,
   ActivityIndicator,
-  Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useIsFocused } from 'expo-router';
-
-import { getDatabase, useDatabaseSubscription } from '@/services/db';
-import { useCurrency } from '@/services/currency';
-import { useTheme } from '@/services/theme-context';
+import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/components/ui/glass-card';
-
-interface CategorySpend {
-  category: string;
-  total: number;
-  percentage: number;
-  count: number;
-}
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import { dashboardService } from '@/services/dashboard';
+import { AnalyticsResponse, SummaryResponse } from '@/services/types';
+import { useTheme } from '@/services/theme-context';
+import { useCurrency } from '@/services/currency';
+import { hapticImpactMedium } from '@/services/haptics';
 
 export default function AnalyticsScreen() {
-  const isFocused = useIsFocused();
-  const { formatAmount } = useCurrency();
   const { isDark } = useTheme();
+  const { formatAmount } = useCurrency();
+
+  const [timeRange, setTimeRange] = useState<'all' | 'month' | 'last_month'>('all');
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [breakdownType, setBreakdownType] = useState<'expense' | 'income'>('expense');
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
-  const [categorySpend, setCategorySpend] = useState<CategorySpend[]>([]);
-  const [totalExpenses, setTotalExpenses] = useState(0);
-  const [totalIncome, setTotalIncome] = useState(0);
-  const [chartData, setChartData] = useState<{ label: string; expense: number; income: number }[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const getDateRange = (range: 'all' | 'month' | 'last_month') => {
+    const now = new Date();
+    if (range === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start_date: start.toISOString(), end_date: now.toISOString() };
+    }
+    if (range === 'last_month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      return { start_date: start.toISOString(), end_date: end.toISOString() };
+    }
+    return {};
+  };
 
   const loadAnalytics = useCallback(async () => {
     try {
-      const db = await getDatabase();
-      
-      // Determine date constraint based on period
-      let dateConstraint = "date >= date('now', '-30 days')";
-      if (period === 'quarterly') {
-        dateConstraint = "date >= date('now', '-90 days')";
-      } else if (period === 'yearly') {
-        dateConstraint = "date >= date('now', '-365 days')";
-      }
-
-      // 1. Fetch total expenses & income for period
-      const expenseRow = await db.getFirstAsync<{ total: number }>(
-        `SELECT ABS(SUM(amount)) as total FROM transactions WHERE type='expense' AND ${dateConstraint}`
-      );
-      const incomeRow = await db.getFirstAsync<{ total: number }>(
-        `SELECT SUM(amount) as total FROM transactions WHERE type='income' AND ${dateConstraint}`
-      );
-      
-      const totalExp = expenseRow?.total || 0;
-      setTotalExpenses(totalExp);
-      setTotalIncome(incomeRow?.total || 0);
-
-      // 2. Fetch category spend breakdown
-      const catRows = await db.getAllAsync<{ category: string; total: number; count: number }>(
-        `SELECT category, ABS(SUM(amount)) as total, COUNT(*) as count 
-         FROM transactions 
-         WHERE type='expense' AND ${dateConstraint}
-         GROUP BY category 
-         ORDER BY total DESC`
-      );
-
-      const formattedCategories: CategorySpend[] = catRows.map(row => ({
-        category: row.category,
-        total: row.total,
-        percentage: totalExp > 0 ? Math.round((row.total / totalExp) * 100) : 0,
-        count: row.count
-      }));
-      setCategorySpend(formattedCategories);
-
-      // 3. Generate chart data
-      let groupFormat = '%m-%d';
-      if (period === 'quarterly') {
-        groupFormat = 'Wk %W';
-      } else if (period === 'yearly') {
-        groupFormat = '%b';
-      }
-
-      const rawChartRows = await db.getAllAsync<{ label: string; type: string; total: number }>(
-        `SELECT 
-           strftime('${groupFormat}', date) as label, 
-           type, 
-           ABS(SUM(amount)) as total 
-         FROM transactions 
-         WHERE ${dateConstraint}
-         GROUP BY label, type
-         ORDER BY date ASC`
-      );
-
-      const labelMap: Record<string, { label: string; expense: number; income: number }> = {};
-      
-      const intervals = period === 'monthly' ? ['06-25', '06-26', '06-27', '06-28', '06-29', '06-30'] 
-                      : period === 'quarterly' ? ['Wk 22', 'Wk 23', 'Wk 24', 'Wk 25', 'Wk 26', 'Wk 27']
-                      : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-
-      intervals.forEach(i => {
-        labelMap[i] = { label: i, expense: 0, income: 0 };
-      });
-
-      rawChartRows.forEach(row => {
-        const label = row.label || 'Other';
-        if (!labelMap[label]) {
-          labelMap[label] = { label, expense: 0, income: 0 };
-        }
-        if (row.type === 'expense') {
-          labelMap[label].expense = row.total;
-        } else {
-          labelMap[label].income = row.total;
-        }
-      });
-
-      const sortedChart = Object.values(labelMap).slice(-6);
-      setChartData(sortedChart);
-
-    } catch (error) {
-      console.error('Error loading analytics:', error);
+      const { start_date, end_date } = getDateRange(timeRange);
+      const [analyticsData, summaryData] = await Promise.all([
+        dashboardService.getAnalytics(start_date, end_date),
+        dashboardService.getSummary(start_date, end_date),
+      ]);
+      setAnalytics(analyticsData);
+      setSummary(summaryData);
+    } catch (err) {
+      console.log('Error loading analytics:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [period]);
-
-  useDatabaseSubscription(loadAnalytics);
+  }, [timeRange]);
 
   useEffect(() => {
-    if (isFocused) {
-      loadAnalytics();
-    }
-  }, [isFocused, loadAnalytics]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAnalytics();
+  }, [loadAnalytics]);
 
-  const maxChartValue = useMemo(() => {
-    return Math.max(...chartData.map(d => Math.max(d.expense, d.income)), 100);
-  }, [chartData]);
+  const onRefresh = () => {
+    setRefreshing(true);
+    hapticImpactMedium();
+    loadAnalytics();
+  };
+
+  const totalIncome = summary?.total_income ?? 0;
+  const totalExpense = summary?.total_expenses ?? 0;
+  const netSavings = summary?.net_savings ?? 0;
+  const savingsPct = summary?.savings_percentage ?? 0;
+
+  const currentBreakdown =
+    breakdownType === 'expense'
+      ? analytics?.expense_breakdown || []
+      : analytics?.income_breakdown || [];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Header & Range Selector */}
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.headerTitle, !isDark && styles.textLight]}>Financial Analytics</Text>
-            <Text style={[styles.headerSubtitle, !isDark && styles.textSecondaryLight]}>Detailed breakdown of your spending</Text>
-          </View>
-        </View>
+    <View style={[styles.screen, { backgroundColor: isDark ? '#08080C' : '#F6F6F9' }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={[styles.screenTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+          Financial Analytics
+        </Text>
+      </View>
 
-        {/* Period Selector Tabs */}
-        <View style={[styles.toggleContainer, !isDark && styles.toggleContainerLight]}>
-          {(['monthly', 'quarterly', 'yearly'] as const).map(p => (
-            <TouchableOpacity
-              key={p}
-              style={[
-                styles.toggleBtn, 
-                period === p && styles.activeToggleBtn,
-                period === p && !isDark && styles.activeToggleBtnLight
-              ]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[
-                styles.toggleBtnText, 
-                period === p && styles.activeToggleBtnText,
-                period === p && !isDark && styles.activeToggleBtnTextLight
-              ]}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      {/* Time Range Selector */}
+      <View style={styles.tabContainer}>
+        <SegmentedControl
+          options={[
+            { label: 'All Time', value: 'all' },
+            { label: 'This Month', value: 'month' },
+            { label: 'Last Month', value: 'last_month' },
+          ]}
+          value={timeRange}
+          onChange={(val) => setTimeRange(val as any)}
+        />
+      </View>
 
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={isDark ? '#3B82F6' : '#2563EB'}
+          />
+        }
+      >
         {loading ? (
-          <ActivityIndicator size="large" color={isDark ? "#ffffff" : "#0A0A0A"} style={{ marginTop: 40 }} />
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
         ) : (
           <>
-            {/* Spending Chart Card */}
-            <GlassCard>
-              <View style={styles.chartHeader}>
-                <View>
-                  <Text style={[styles.chartTitle, !isDark && styles.textLight]}>Spending Trend</Text>
-                  <View style={styles.chartTrendRow}>
-                    <Text style={styles.trendPercent}>+12.4%</Text>
-                    <Text style={styles.trendSubText}>vs last period</Text>
-                  </View>
-                </View>
-                <View style={styles.legend}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: isDark ? '#ffb4ab' : '#ba1a1a' }]} />
-                    <Text style={styles.legendText}>Expenses</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: isDark ? '#a6c8ff' : '#208aef' }]} />
-                    <Text style={styles.legendText}>Income</Text>
-                  </View>
+            {/* Overview Summary Card */}
+            <GlassCard style={styles.overviewCard}>
+              <View style={styles.overviewHeader}>
+                <Text style={[styles.overviewLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                  NET CASH FLOW
+                </Text>
+                <View
+                  style={[
+                    styles.savingsBadge,
+                    {
+                      backgroundColor:
+                        netSavings >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.savingsBadgeText,
+                      { color: netSavings >= 0 ? '#10B981' : '#EF4444' },
+                    ]}
+                  >
+                    {savingsPct.toFixed(1)}% Saved
+                  </Text>
                 </View>
               </View>
 
-              {/* Custom High-Performance Bar-Chart Visualization */}
-              <View style={styles.chartContainer}>
-                <View style={styles.barsContainer}>
-                  {chartData.map((d, index) => {
-                    const expenseHeight = (d.expense / maxChartValue) * 140;
-                    const incomeHeight = (d.income / maxChartValue) * 140;
-                    
-                    return (
-                      <View key={d.label + index} style={styles.barGroup}>
-                        <View style={styles.barsRow}>
-                          {/* Income Bar (Left/Blue) */}
-                          <View style={[
-                            styles.barFill, 
-                            { 
-                              height: Math.max(4, incomeHeight), 
-                              backgroundColor: isDark ? '#a6c8ff' : '#208aef',
-                              shadowColor: isDark ? '#a6c8ff' : '#208aef',
-                              shadowOpacity: 0.2,
-                              shadowRadius: 4,
-                            }
-                          ]} />
-                          {/* Expense Bar (Right/Red) */}
-                          <View style={[
-                            styles.barFill, 
-                            { 
-                              height: Math.max(4, expenseHeight), 
-                              backgroundColor: isDark ? '#ffb4ab' : '#ba1a1a',
-                              shadowColor: isDark ? '#ffb4ab' : '#ba1a1a',
-                              shadowOpacity: 0.2,
-                              shadowRadius: 4,
-                            }
-                          ]} />
-                        </View>
-                        <Text style={styles.barLabel}>{d.label}</Text>
-                      </View>
-                    );
-                  })}
+              <Text
+                style={[
+                  styles.overviewAmount,
+                  { color: netSavings >= 0 ? '#10B981' : '#EF4444' },
+                ]}
+              >
+                {formatAmount(netSavings)}
+              </Text>
+
+              {/* Income vs Expense Bar */}
+              <View style={styles.comparisonSection}>
+                <View style={styles.compHeader}>
+                  <Text style={[styles.compText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                    Income: <Text style={{ color: '#10B981', fontWeight: '700' }}>{formatAmount(totalIncome)}</Text>
+                  </Text>
+                  <Text style={[styles.compText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                    Expense: <Text style={{ color: '#EF4444', fontWeight: '700' }}>{formatAmount(totalExpense)}</Text>
+                  </Text>
                 </View>
+
+                {totalIncome + totalExpense > 0 && (
+                  <View style={styles.multiBarBg}>
+                    <View
+                      style={[
+                        styles.incomeBarFill,
+                        {
+                          flex: Math.max(totalIncome, 1),
+                        },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.expenseBarFill,
+                        {
+                          flex: Math.max(totalExpense, 1),
+                        },
+                      ]}
+                    />
+                  </View>
+                )}
               </View>
             </GlassCard>
 
-            {/* Income vs Expenses Summary */}
-            <View style={styles.summaryRow}>
-              <GlassCard style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Total Income</Text>
-                <Text style={[styles.summaryValue, { color: isDark ? '#a6c8ff' : '#208aef' }]}>
-                  {formatAmount(totalIncome)}
+            {/* Monthly Trend Time Series (if available) */}
+            {analytics?.income_vs_expense && analytics.income_vs_expense.length > 0 && (
+              <GlassCard style={styles.trendCard}>
+                <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A', marginBottom: 12 }]}>
+                  Monthly Performance
                 </Text>
+                {analytics.income_vs_expense.map((point) => (
+                  <View key={point.period} style={styles.trendRow}>
+                    <Text style={[styles.periodText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      {point.period}
+                    </Text>
+                    <View style={styles.trendAmounts}>
+                      <Text style={[styles.trendIncome, { color: '#10B981' }]}>
+                        +{formatAmount(point.income, 0)}
+                      </Text>
+                      <Text style={[styles.trendExpense, { color: '#EF4444' }]}>
+                        -{formatAmount(point.expense, 0)}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
               </GlassCard>
-              <GlassCard style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Total Expenses</Text>
-                <Text style={[styles.summaryValue, { color: isDark ? '#ffb4ab' : '#ba1a1a' }]}>
-                  {formatAmount(totalExpenses)}
-                </Text>
-              </GlassCard>
+            )}
+
+            {/* Category Breakdown Switcher */}
+            <View style={styles.breakdownHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                Category Breakdown
+              </Text>
+              <View style={styles.typeSwitcher}>
+                <TouchableOpacity
+                  onPress={() => setBreakdownType('expense')}
+                  style={[
+                    styles.typeBtn,
+                    breakdownType === 'expense' && {
+                      backgroundColor: '#EF4444',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.typeBtnText,
+                      {
+                        color:
+                          breakdownType === 'expense'
+                            ? '#FFFFFF'
+                            : isDark
+                            ? '#94A3B8'
+                            : '#64748B',
+                      },
+                    ]}
+                  >
+                    Expenses
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setBreakdownType('income')}
+                  style={[
+                    styles.typeBtn,
+                    breakdownType === 'income' && {
+                      backgroundColor: '#10B981',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.typeBtnText,
+                      {
+                        color:
+                          breakdownType === 'income'
+                            ? '#FFFFFF'
+                            : isDark
+                            ? '#94A3B8'
+                            : '#64748B',
+                      },
+                    ]}
+                  >
+                    Income
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {/* Category Breakdown Section */}
-            <Text style={[styles.sectionTitle, !isDark && styles.textLight]}>Spending by Category</Text>
-            
-            <GlassCard>
-              {categorySpend.length === 0 ? (
-                <Text style={styles.emptyText}>No expenses recorded in this period.</Text>
-              ) : (
-                categorySpend.map((cat, index) => {
-                  // Generate custom indicator colors
-                  const colors = isDark 
-                    ? ['#a6c8ff', '#9e77ed', '#ffb4ab', '#fdba74', '#cbd5e1']
-                    : ['#208aef', '#7f56d9', '#ba1a1a', '#ea580c', '#64748b'];
-                  const barColor = colors[index % colors.length];
-
-                  return (
-                    <View key={cat.category} style={[styles.catRow, index > 0 && (isDark ? styles.catBorder : [styles.catBorder, { borderTopColor: 'rgba(0,0,0,0.05)' }])]}>
-                      <View style={styles.catMeta}>
-                        <View style={styles.catLeft}>
-                          <View style={[styles.catDot, { backgroundColor: barColor }]} />
-                          <Text style={[styles.catName, !isDark && styles.textLight]}>{cat.category}</Text>
-                          <Text style={styles.catCount}>({cat.count} txs)</Text>
-                        </View>
-                        <View style={styles.catRight}>
-                          <Text style={[styles.catAmount, !isDark && styles.textLight]}>{formatAmount(cat.total)}</Text>
-                          <Text style={styles.catPercentage}>{cat.percentage}%</Text>
-                        </View>
+            {/* Categories List */}
+            {currentBreakdown.length === 0 ? (
+              <GlassCard style={styles.emptyCard}>
+                <Ionicons
+                  name="pie-chart-outline"
+                  size={36}
+                  color={isDark ? '#64748B' : '#94A3B8'}
+                />
+                <Text style={[styles.emptyText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                  No {breakdownType} records for this period
+                </Text>
+              </GlassCard>
+            ) : (
+              currentBreakdown.map((item) => (
+                <GlassCard key={item.category_id} style={styles.categoryCard}>
+                  <View style={styles.catHeader}>
+                    <View style={styles.catNameRow}>
+                      <View
+                        style={[
+                          styles.catIconBox,
+                          {
+                            backgroundColor:
+                              breakdownType === 'expense'
+                                ? 'rgba(239, 68, 68, 0.15)'
+                                : 'rgba(16, 185, 129, 0.15)',
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="pricetag"
+                          size={16}
+                          color={breakdownType === 'expense' ? '#EF4444' : '#10B981'}
+                        />
                       </View>
-                      <View style={[styles.catProgressBg, !isDark && { backgroundColor: 'rgba(0,0,0,0.06)' }]}>
-                        <View style={[styles.catProgressFill, { width: `${cat.percentage}%`, backgroundColor: barColor }]} />
-                      </View>
+                      <Text style={[styles.catName, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                        {item.category_name}
+                      </Text>
                     </View>
-                  );
-                })
-              )}
-            </GlassCard>
+
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text
+                        style={[
+                          styles.catAmount,
+                          { color: breakdownType === 'expense' ? '#EF4444' : '#10B981' },
+                        ]}
+                      >
+                        {formatAmount(item.amount)}
+                      </Text>
+                      <Text style={[styles.catPct, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                        {item.percentage.toFixed(1)}%
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.barBg,
+                      { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0' },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.barFill,
+                        {
+                          width: `${Math.min(item.percentage, 100)}%`,
+                          backgroundColor:
+                            breakdownType === 'expense' ? '#EF4444' : '#10B981',
+                        },
+                      ]}
+                    />
+                  </View>
+                </GlassCard>
+              ))
+            )}
           </>
         )}
-
-        {/* Extra margin bottom to clear tab bar */}
-        <View style={{ height: 100 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: 'transparent',
+    paddingTop: Platform.OS === 'ios' ? 56 : 32,
   },
-  textLight: {
-    color: '#0A0A0A',
+  header: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  textSecondaryLight: {
-    color: '#60646C',
+  screenTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  toggleContainerLight: {
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  activeToggleBtnLight: {
-    backgroundColor: '#0A0A0A',
-  },
-  activeToggleBtnTextLight: {
-    color: '#ffffff',
+  tabContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 14,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+    gap: 12,
   },
-  headerRow: {
-    marginBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    fontFamily: Platform.OS === 'web' ? 'var(--font-display)' : 'normal',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#8e9192',
-    marginTop: 2,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(28, 28, 30, 0.6)',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
+  loaderContainer: {
+    paddingVertical: 80,
     alignItems: 'center',
-    borderRadius: 10,
   },
-  activeToggleBtn: {
-    backgroundColor: '#ffffff',
+  overviewCard: {
+    padding: 20,
+    borderRadius: 22,
   },
-  toggleBtnText: {
-    color: '#8e9192',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  activeToggleBtnText: {
-    color: '#0A0A0A',
-  },
-  glassCard: {
-    marginBottom: 16,
-  },
-  chartHeader: {
+  overviewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+    alignItems: 'center',
   },
-  chartTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
+  overviewLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  chartTrendRow: {
+  savingsBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  savingsBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  overviewAmount: {
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginVertical: 6,
+  },
+  comparisonSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  compHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  compText: {
+    fontSize: 12,
+  },
+  multiBarBg: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    gap: 2,
+  },
+  incomeBarFill: {
+    backgroundColor: '#10B981',
+    borderRadius: 4,
+  },
+  expenseBarFill: {
+    backgroundColor: '#EF4444',
+    borderRadius: 4,
+  },
+  trendCard: {
+    padding: 18,
+    borderRadius: 20,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  trendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  periodText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  trendAmounts: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  trendIncome: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  trendExpense: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  breakdownHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 4,
   },
-  trendPercent: {
+  typeSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10,
+    padding: 2,
+  },
+  typeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  typeBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#a6c8ff',
-    marginRight: 6,
   },
-  trendSubText: {
-    fontSize: 12,
-    color: '#8e9192',
+  categoryCard: {
+    padding: 14,
+    borderRadius: 16,
   },
-  legend: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontSize: 11,
-    color: '#8e9192',
-    fontWeight: '500',
-  },
-  chartContainer: {
-    height: 180,
-    justifyContent: 'flex-end',
-    paddingTop: 10,
-  },
-  barsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 160,
-  },
-  barGroup: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  barsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-    marginBottom: 8,
-  },
-  barFill: {
-    width: 10,
-    borderRadius: 5,
-  },
-  barLabel: {
-    fontSize: 10,
-    color: '#8e9192',
-    fontWeight: '500',
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  summaryCard: {
-    flex: 1,
-    marginBottom: 0,
-    padding: 16,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#8e9192',
-    marginBottom: 6,
-  },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 14,
-  },
-  catRow: {
-    paddingVertical: 14,
-  },
-  catBorder: {
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  catMeta: {
+  catHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
-  catLeft: {
+  catNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  catDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  catIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 10,
   },
   catName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
-  },
-  catCount: {
-    fontSize: 11,
-    color: '#8e9192',
-    marginLeft: 6,
-  },
-  catRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   catAmount: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontWeight: '700',
   },
-  catPercentage: {
-    fontSize: 12,
-    color: '#8e9192',
-    fontWeight: '500',
-    width: 32,
-    textAlign: 'right',
+  catPct: {
+    fontSize: 11,
+    marginTop: 1,
   },
-  catProgressBg: {
+  barBg: {
     height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 3,
     overflow: 'hidden',
   },
-  catProgressFill: {
+  barFill: {
     height: '100%',
     borderRadius: 3,
   },
+  emptyCard: {
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
   emptyText: {
-    color: '#8e9192',
-    textAlign: 'center',
-    paddingVertical: 20,
-  }
+    fontSize: 14,
+    marginTop: 8,
+  },
 });

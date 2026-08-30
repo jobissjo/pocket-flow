@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { getSetting, setSetting } from './db';
 import { getSecureItem, saveSecureItem } from './secure-storage';
 
 interface SecurityContextType {
@@ -48,14 +47,12 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Initialize and check database and hardware settings on mount
   useEffect(() => {
     let active = true;
     const init = async () => {
       const isSecured = await checkSecuritySetup();
       const secureBioSetting = await getSecureItem('biometrics_enabled');
-      const fallbackBioSetting = await getSetting('biometrics', 'true');
-      const isBioEnabled = secureBioSetting !== null ? secureBioSetting === 'true' : fallbackBioSetting === 'true';
+      const isBioEnabled = secureBioSetting === 'true';
 
       if (active) {
         setBiometricsEnabled(isBioEnabled);
@@ -72,7 +69,6 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     };
   }, [checkSecuritySetup]);
 
-  // App state listener for auto-locking when backgrounded
   const appState = useRef(AppState.currentState);
   const lastBackgroundTime = useRef<number | null>(null);
 
@@ -84,9 +80,8 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
       ) {
         if (lastBackgroundTime.current) {
           const elapsed = Date.now() - lastBackgroundTime.current;
-          // Grace period: 2 seconds to allow brief interruptions without locking
           if (elapsed > 2000) {
-            const bioSetting = await getSetting('biometrics', 'true');
+            const bioSetting = await getSecureItem('biometrics_enabled');
             const isBioEnabled = bioSetting === 'true';
             const isSecured = await checkSecuritySetup();
             if (isBioEnabled && isSecured) {
@@ -119,7 +114,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticating(true);
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Unlock WealthFlow',
+        promptMessage: 'Unlock PocketFlow',
         fallbackLabel: 'Enter Passcode',
         disableDeviceFallback: false,
       });
@@ -142,13 +137,12 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     if (isAuthenticating) return false;
 
     if (!val) {
-      // Require identity verification to disable protection
       const isSecured = await checkSecuritySetup();
       if (isSecured) {
         setIsAuthenticating(true);
         try {
           const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: 'Confirm identity to disable lock',
+            promptMessage: 'Confirm identity to disable biometric lock',
             fallbackLabel: 'Enter Passcode',
             disableDeviceFallback: false,
           });
@@ -165,7 +159,6 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } else {
-      // Require verification to enable it
       const isSecured = await checkSecuritySetup();
       if (!isSecured) {
         return false;
@@ -173,7 +166,6 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     }
 
     await saveSecureItem('biometrics_enabled', val ? 'true' : 'false');
-    await setSetting('biometrics', val ? 'true' : 'false');
     setBiometricsEnabled(val);
     return true;
   }, [checkSecuritySetup, isAuthenticating]);
