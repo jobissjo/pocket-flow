@@ -23,10 +23,10 @@ import { userService } from '@/services/users';
 import { hapticImpactMedium, hapticNotificationSuccess, hapticLight } from '@/services/haptics';
 
 const CURRENCIES = [
+  { code: 'INR', name: 'Indian Rupee (₹)' },
   { code: 'USD', name: 'US Dollar ($)' },
   { code: 'EUR', name: 'Euro (€)' },
   { code: 'GBP', name: 'British Pound (£)' },
-  { code: 'INR', name: 'Indian Rupee (₹)' },
   { code: 'JPY', name: 'Japanese Yen (¥)' },
   { code: 'CAD', name: 'Canadian Dollar (CA$)' },
   { code: 'AUD', name: 'Australian Dollar (AU$)' },

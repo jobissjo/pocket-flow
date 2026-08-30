@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StatusBar } from 'react-native';
 import { useEffect } from 'react';
 
 import AppTabs from '@/components/app-tabs';
+import LoginScreen from './auth/login';
 import { CustomThemeProvider, useTheme } from '@/services/theme-context';
 import { AuthProvider, useAuth } from '@/services/auth-context';
 import { SecurityProvider } from '@/services/security-context';
@@ -20,9 +21,7 @@ function AppNavigationGuard() {
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/auth/login' as any);
-    } else if (isAuthenticated && inAuthGroup) {
+    if (isAuthenticated && inAuthGroup) {
       router.replace('/' as any);
     }
   }, [isAuthenticated, isLoading, inAuthGroup, router]);
@@ -42,6 +41,18 @@ function AppNavigationGuard() {
     );
   }
 
+  // If unauthenticated, show auth screens (register/forgot-password via Slot, or LoginScreen)
+  if (!isAuthenticated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? '#08080C' : '#F8FAFC' }}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <BackgroundBlobs isDark={isDark} />
+        {inAuthGroup ? <Slot /> : <LoginScreen />}
+      </View>
+    );
+  }
+
+  // If authenticated and in auth group, let slot resolve while useEffect replaces route to /
   if (inAuthGroup) {
     return (
       <View style={{ flex: 1, backgroundColor: isDark ? '#08080C' : '#F8FAFC' }}>
@@ -52,6 +63,7 @@ function AppNavigationGuard() {
     );
   }
 
+  // Authenticated user gets the full app tabs & security vault
   return (
     <SecurityLock>
       <View style={{ flex: 1, backgroundColor: isDark ? '#08080C' : '#F6F6F9' }}>

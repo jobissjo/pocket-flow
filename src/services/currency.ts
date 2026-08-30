@@ -4,23 +4,24 @@ import { getSecureItem, saveSecureItem } from './secure-storage';
 
 export function getCurrencySymbol(code: string): string {
   switch (code) {
+    case 'INR': return '₹';
+    case 'USD': return '$';
     case 'EUR': return '€';
     case 'GBP': return '£';
-    case 'INR': return '₹';
     case 'JPY': return '¥';
     case 'CAD': return 'CA$';
     case 'AUD': return 'AU$';
-    default: return '$';
+    default: return '₹';
   }
 }
 
 export function useCurrency() {
   const isFocused = useIsFocused();
-  const [currencyCode, setCurrencyCode] = useState('USD');
-  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const [currencyCode, setCurrencyCode] = useState('INR');
+  const [currencySymbol, setCurrencySymbol] = useState('₹');
 
   const loadCurrency = useCallback(async () => {
-    const code = (await getSecureItem('pocketflow_currency')) || 'USD';
+    const code = (await getSecureItem('pocketflow_currency')) || 'INR';
     setCurrencyCode(code);
     setCurrencySymbol(getCurrencySymbol(code));
   }, []);
@@ -38,7 +39,8 @@ export function useCurrency() {
 
   const formatAmount = (amount: number | undefined | null, digits: number = 2) => {
     const safeAmount = amount ?? 0;
-    const formatted = Math.abs(safeAmount).toLocaleString(undefined, {
+    const locale = currencyCode === 'INR' ? 'en-IN' : undefined;
+    const formatted = Math.abs(safeAmount).toLocaleString(locale, {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
     });
