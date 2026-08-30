@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,6 @@ import { useAuth } from '@/services/auth-context';
 import { useTheme } from '@/services/theme-context';
 import { useSecurity } from '@/services/security-context';
 import { useCurrency } from '@/services/currency';
-import { getBaseUrl, setCustomBaseUrl } from '@/services/api';
 import { userService } from '@/services/users';
 import { hapticImpactMedium, hapticNotificationSuccess, hapticLight } from '@/services/haptics';
 
@@ -44,16 +43,8 @@ export default function ProfileScreen() {
   const [editPhone, setEditPhone] = useState(user?.mobile_number || '');
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // API Config State
-  const [showApiModal, setShowApiModal] = useState(false);
-  const [apiUrl, setApiUrl] = useState('');
-
   // Currency Modal State
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
-
-  useEffect(() => {
-    getBaseUrl().then(setApiUrl);
-  }, []);
 
   const handleOpenEdit = () => {
     hapticLight();
@@ -76,13 +67,6 @@ export default function ProfileScreen() {
     } finally {
       setSavingProfile(false);
     }
-  };
-
-  const handleSaveApiUrl = async () => {
-    hapticLight();
-    await setCustomBaseUrl(apiUrl);
-    hapticNotificationSuccess();
-    setShowApiModal(false);
   };
 
   const handleLogout = () => {
@@ -255,33 +239,6 @@ export default function ProfileScreen() {
               trackColor={{ false: '#CBD5E1', true: '#10B981' }}
             />
           </View>
-
-          <View style={styles.divider} />
-
-          {/* Backend API Host */}
-          <TouchableOpacity
-            onPress={() => {
-              hapticLight();
-              setShowApiModal(true);
-            }}
-            style={styles.settingRow}
-          >
-            <View style={styles.settingLeft}>
-              <Ionicons name="cloud-outline" size={20} color="#F59E0B" style={styles.settingIcon} />
-              <View>
-                <Text style={[styles.settingTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
-                  Backend Server API
-                </Text>
-                <Text
-                  style={[styles.settingSub, { color: isDark ? '#64748B' : '#94A3B8' }]}
-                  numberOfLines={1}
-                >
-                  {apiUrl || 'api-pocket-flow.onrender.com'}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={isDark ? '#64748B' : '#94A3B8'} />
-          </TouchableOpacity>
         </GlassCard>
 
         {/* Account Actions */}
@@ -401,30 +358,6 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             );
           })}
-        </View>
-      </ModalSheet>
-
-      {/* API URL Config Modal */}
-      <ModalSheet
-        visible={showApiModal}
-        onClose={() => setShowApiModal(false)}
-        title="API Server Host"
-        subtitle="Configure the backend REST API endpoint"
-      >
-        <View style={{ paddingVertical: 8 }}>
-          <CustomInput
-            label="API Base URL"
-            value={apiUrl}
-            onChangeText={setApiUrl}
-            placeholder="https://api-pocket-flow.onrender.com"
-            autoCapitalize="none"
-            autoCorrect={false}
-            leftIcon="cloud-outline"
-          />
-
-          <TouchableOpacity onPress={handleSaveApiUrl} style={styles.modalSaveBtn}>
-            <Text style={styles.modalSaveText}>Update Server Host</Text>
-          </TouchableOpacity>
         </View>
       </ModalSheet>
     </View>
