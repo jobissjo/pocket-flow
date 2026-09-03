@@ -18,6 +18,7 @@ import { AccountFormModal } from '@/components/forms/account-form-modal';
 import { CardFormModal } from '@/components/forms/card-form-modal';
 import { EMIFormModal } from '@/components/forms/emi-form-modal';
 import { AITransactionImportModal } from '@/components/import/ai-transaction-import-modal';
+import { AIChatModal } from '@/components/ai/ai-chat-modal';
 import { dashboardService } from '@/services/dashboard';
 import { accountService } from '@/services/accounts';
 import { creditCardService } from '@/services/creditCards';
@@ -55,6 +56,7 @@ export default function DashboardScreen() {
   const [showAddCard, setShowAddCard] = useState(false);
   const [showAddEMI, setShowAddEMI] = useState(false);
   const [showAIImport, setShowAIImport] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [selectedTxn, setSelectedTxn] = useState<TransactionResponse | null>(null);
 
   const loadDashboardData = useCallback(async () => {
@@ -143,6 +145,19 @@ export default function DashboardScreen() {
             <TouchableOpacity
               onPress={() => {
                 hapticLight();
+                setShowAIChat(true);
+              }}
+              style={[
+                styles.quickAddHeaderBtn,
+                { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF' },
+              ]}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color={isDark ? '#93C5FD' : '#2563EB'} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                hapticLight();
                 setShowAIImport(true);
               }}
               style={[
@@ -160,7 +175,7 @@ export default function DashboardScreen() {
               }}
               style={styles.quickAddHeaderBtn}
             >
-              <Ionicons name="add" size={24} color="#FFFFFF" />
+              <Ionicons name="add" size={22} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -218,6 +233,22 @@ export default function DashboardScreen() {
 
             {/* Quick Action Pills */}
             <View style={styles.quickActionsRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  hapticLight();
+                  setShowAIChat(true);
+                }}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' },
+                ]}
+              >
+                <Ionicons name="chatbubble-ellipses" size={20} color="#3B82F6" />
+                <Text style={[styles.quickActionText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>
+                  AI Chat
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 onPress={() => {
                   hapticLight();
@@ -597,6 +628,30 @@ export default function DashboardScreen() {
           loadDashboardData();
         }}
       />
+
+      <AIChatModal
+        visible={showAIChat}
+        onClose={() => setShowAIChat(false)}
+      />
+
+      {/* Floating AI Chat Button */}
+      <TouchableOpacity
+        onPress={() => {
+          hapticLight();
+          setShowAIChat(true);
+        }}
+        style={[
+          styles.floatingAIBtn,
+          {
+            backgroundColor: '#2563EB',
+            shadowColor: '#2563EB',
+          },
+        ]}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+        <Text style={styles.floatingAIBtnText}>Ask AI</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -903,6 +958,27 @@ const styles = StyleSheet.create({
   emptyAddText: {
     color: '#FFFFFF',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  floatingAIBtn: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 99,
+  },
+  floatingAIBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '700',
   },
 });

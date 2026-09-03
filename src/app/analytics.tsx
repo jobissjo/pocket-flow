@@ -16,7 +16,8 @@ import { dashboardService } from '@/services/dashboard';
 import { AnalyticsResponse, SummaryResponse } from '@/services/types';
 import { useTheme } from '@/services/theme-context';
 import { useCurrency } from '@/services/currency';
-import { hapticImpactMedium } from '@/services/haptics';
+import { hapticImpactMedium, hapticLight } from '@/services/haptics';
+import { AIChatModal } from '@/components/ai/ai-chat-modal';
 
 export default function AnalyticsScreen() {
   const { isDark } = useTheme();
@@ -28,6 +29,7 @@ export default function AnalyticsScreen() {
   const [breakdownType, setBreakdownType] = useState<'expense' | 'income'>('expense');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
 
   const getDateRange = (range: 'all' | 'month' | 'last_month') => {
     const now = new Date();
@@ -88,6 +90,25 @@ export default function AnalyticsScreen() {
         <Text style={[styles.screenTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
           Financial Analytics
         </Text>
+        <TouchableOpacity
+          onPress={() => {
+            hapticLight();
+            setShowAIChat(true);
+          }}
+          style={[
+            styles.aiHeaderBtn,
+            {
+              backgroundColor: isDark ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(99, 102, 241, 0.4)' : '#C7D2FE',
+            },
+          ]}
+        >
+          <Ionicons name="sparkles" size={15} color={isDark ? '#A5B4FC' : '#4F46E5'} />
+          <Text style={[styles.aiHeaderBtnText, { color: isDark ? '#A5B4FC' : '#4F46E5' }]}>
+            AI Insights
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Time Range Selector */}
@@ -350,6 +371,11 @@ export default function AnalyticsScreen() {
           </>
         )}
       </ScrollView>
+
+      <AIChatModal
+        visible={showAIChat}
+        onClose={() => setShowAIChat(false)}
+      />
     </View>
   );
 }
@@ -544,5 +570,17 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     marginTop: 8,
+  },
+  aiHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  aiHeaderBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 4,
   },
 });
