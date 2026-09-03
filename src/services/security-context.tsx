@@ -11,6 +11,8 @@ interface SecurityContextType {
   lockVault: () => void;
   unlockVault: () => Promise<boolean>;
   toggleBiometrics: (val: boolean) => Promise<boolean>;
+  suppressLock: (durationMs?: number) => void;
+  resumeLock: () => void;
 }
 
 const SecurityContext = createContext<SecurityContextType>({
@@ -21,7 +23,20 @@ const SecurityContext = createContext<SecurityContextType>({
   lockVault: () => {},
   unlockVault: async () => false,
   toggleBiometrics: async () => false,
+  suppressLock: () => {},
+  resumeLock: () => {},
 });
+
+// Global lock suppression timestamp for system activities (camera, file picker, gallery)
+let globalLockSuppressedUntil = 0;
+
+export function suppressSecurityLock(durationMs: number = 60000) {
+  globalLockSuppressedUntil = Date.now() + durationMs;
+}
+
+export function resumeSecurityLock() {
+  globalLockSuppressedUntil = 0;
+}
 
 export function SecurityProvider({ children }: { children: React.ReactNode }) {
   const [isLocked, setIsLocked] = useState(false);
@@ -78,6 +93,13 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
+        // If an in-app activity (like gallery picker, camera, document picker) was running, suppress lock
+        if (Date.now() < globalLockSuppressedUntil) {
+          lastBackgroundTime.current = null;
+          appState.current = nextAppState as any;
+          return;
+        }
+
         if (lastBackgroundTime.current) {
           const elapsed = Date.now() - lastBackgroundTime.current;
           if (elapsed > 2000) {
@@ -180,6 +202,8 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
         lockVault,
         unlockVault,
         toggleBiometrics,
+        suppressLock: suppressSecurityLock,
+        resumeLock: resumeSecurityLock,
       }}
     >
       {children}

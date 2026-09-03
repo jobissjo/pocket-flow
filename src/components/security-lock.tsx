@@ -28,73 +28,100 @@ export default function SecurityLock({ children }: { children: React.ReactNode }
     }
   }, [isLocked, unlockVault]);
 
-  if (!isLocked) {
-    return <>{children}</>;
-  }
-
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      <View style={styles.content}>
-        
-        {/* Header Logo/Title */}
-        <View style={styles.header}>
-          <Text style={[styles.logoText, { color: colors.text }]}>POCKETFLOW</Text>
-          <Text style={styles.vaultSubtitle}>SECURE OFFLINE VAULT</Text>
-        </View>
+    <View style={styles.root}>
+      {children}
+      {isLocked && (
+        <View style={styles.lockOverlay}>
+          <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+            <View style={styles.content}>
+              {/* Header Logo/Title */}
+              <View style={styles.header}>
+                <Text style={[styles.logoText, { color: colors.text }]}>POCKETFLOW</Text>
+                <Text style={styles.vaultSubtitle}>SECURE OFFLINE VAULT</Text>
+              </View>
 
-        {/* Security Icon & Status */}
-        <View style={styles.iconContainer}>
-          <View style={[styles.circlePulse, { backgroundColor: isDark ? 'rgba(166, 200, 255, 0.05)' : 'rgba(32, 138, 239, 0.05)' }]}>
-            <View style={[styles.circleInner, { backgroundColor: isDark ? 'rgba(166, 200, 255, 0.1)' : 'rgba(32, 138, 239, 0.1)' }]}>
-              <MaterialIcons
-                name="lock"
-                size={64}
-                color={isDark ? '#a6c8ff' : '#208aef'}
-              />
-            </View>
-          </View>
-          <Text style={[styles.lockTitle, { color: colors.text }]}>Vault Locked</Text>
-          <Text style={styles.lockDesc}>
-            Biometric or device passcode security is active. Authenticate to access your pocket data.
-          </Text>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[
-              styles.unlockBtn,
-              { backgroundColor: isDark ? '#ffffff' : '#208aef' }
-            ]}
-            onPress={() => unlockVault()}
-            activeOpacity={0.8}
-            disabled={isAuthenticating}
-          >
-            {isAuthenticating ? (
-              <ActivityIndicator size="small" color={isDark ? '#000000' : '#ffffff'} />
-            ) : (
-              <>
-                <MaterialIcons
-                  name="fingerprint"
-                  size={20}
-                  color={isDark ? '#000000' : '#ffffff'}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={[styles.unlockBtnText, { color: isDark ? '#000000' : '#ffffff' }]}>
-                  Unlock Vault
+              {/* Security Icon & Status */}
+              <View style={styles.iconContainer}>
+                <View
+                  style={[
+                    styles.circlePulse,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(166, 200, 255, 0.05)'
+                        : 'rgba(32, 138, 239, 0.05)',
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.circleInner,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(166, 200, 255, 0.1)'
+                          : 'rgba(32, 138, 239, 0.1)',
+                      },
+                    ]}
+                  >
+                    <MaterialIcons
+                      name="lock"
+                      size={64}
+                      color={isDark ? '#a6c8ff' : '#208aef'}
+                    />
+                  </View>
+                </View>
+                <Text style={[styles.lockTitle, { color: colors.text }]}>Vault Locked</Text>
+                <Text style={styles.lockDesc}>
+                  Biometric or device passcode security is active. Authenticate to access your pocket data.
                 </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+              </View>
 
-      </View>
-    </SafeAreaView>
+              {/* Action Buttons */}
+              <View style={styles.footer}>
+                <TouchableOpacity
+                  style={[
+                    styles.unlockBtn,
+                    { backgroundColor: isDark ? '#ffffff' : '#208aef' },
+                  ]}
+                  onPress={() => unlockVault()}
+                  activeOpacity={0.8}
+                  disabled={isAuthenticating}
+                >
+                  {isAuthenticating ? (
+                    <ActivityIndicator size="small" color={isDark ? '#000000' : '#ffffff'} />
+                  ) : (
+                    <>
+                      <MaterialIcons
+                        name="fingerprint"
+                        size={20}
+                        color={isDark ? '#000000' : '#ffffff'}
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={[styles.unlockBtnText, { color: isDark ? '#000000' : '#ffffff' }]}>
+                        Unlock Vault
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </SafeAreaView>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  lockOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 999999,
+    elevation: 999999,
+  },
   container: {
     flex: 1,
     justifyContent: 'center',

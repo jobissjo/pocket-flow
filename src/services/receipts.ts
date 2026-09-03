@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import { suppressSecurityLock, resumeSecurityLock } from './security-context';
 
 const RECEIPTS_DIR = `${FileSystem.documentDirectory}receipts/`;
 
@@ -47,6 +48,7 @@ export async function saveReceiptImage(sourceUri: string): Promise<string> {
  */
 export async function pickReceiptFromGallery(): Promise<string | null> {
   try {
+    suppressSecurityLock(120000);
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -69,6 +71,10 @@ export async function pickReceiptFromGallery(): Promise<string | null> {
   } catch (error) {
     console.error('Error picking receipt from gallery:', error);
     return null;
+  } finally {
+    setTimeout(() => {
+      resumeSecurityLock();
+    }, 1500);
   }
 }
 
@@ -77,6 +83,7 @@ export async function pickReceiptFromGallery(): Promise<string | null> {
  */
 export async function takeReceiptPhotoFromCamera(): Promise<string | null> {
   try {
+    suppressSecurityLock(120000);
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
@@ -98,5 +105,9 @@ export async function takeReceiptPhotoFromCamera(): Promise<string | null> {
   } catch (error) {
     console.error('Error taking receipt photo:', error);
     return null;
+  } finally {
+    setTimeout(() => {
+      resumeSecurityLock();
+    }, 1500);
   }
 }

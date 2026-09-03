@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
-import { apiRequest } from './api';
+import * as FileSystem from 'expo-file-system/legacy';
+import { apiRequest, getBaseUrl, getStoredToken, ApiError } from './api';
 import { transactionService } from './transactions';
 import type {
   TransactionImportDraft,
@@ -203,26 +204,59 @@ export const transactionImportsService = {
     mimeType: string = 'image/jpeg',
     fileName: string = 'receipt.jpg'
   ): Promise<TransactionImportDraft> => {
-    const formData = new FormData();
+    // 1. Native Devices (Android / iOS): Use FileSystem.uploadAsync to bypass React Native FormDataPart limitations
+    if (Platform.OS !== 'web') {
+      const baseUrl = await getBaseUrl();
+      const token = await getStoredToken();
+      const uploadUrl = `${baseUrl.replace(/\/$/, '')}/api/transaction-imports/image`;
 
-    if (Platform.OS === 'web') {
-      // In web browser, fetch the blob URL to create a real File/Blob
-      try {
-        const response = await fetch(fileUri);
-        const blob = await response.blob();
-        formData.append('file', blob, fileName);
-      } catch {
-        formData.append('file', {
-          uri: fileUri,
-          name: fileName,
-          type: mimeType,
-        } as any);
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, fileUri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType: mimeType,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (uploadResult.status >= 200 && uploadResult.status < 300) {
+        const data = JSON.parse(uploadResult.body);
+        return parseImportDraftResponse(data, fileUri);
+      } else {
+        let errorMessage = `Upload failed with status ${uploadResult.status}`;
+        try {
+          const errData = JSON.parse(uploadResult.body);
+          if (typeof errData.detail === 'string') {
+            errorMessage = errData.detail;
+          } else if (Array.isArray(errData.detail)) {
+            errorMessage = errData.detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(', ');
+          } else if (errData.message) {
+            errorMessage = errData.message;
+          }
+        } catch {}
+
+        if (uploadResult.status === 401) {
+          errorMessage = 'Session expired. Please log in again to analyze receipts.';
+        }
+
+        throw new ApiError(errorMessage, uploadResult.status);
       }
-    } else {
-      // React Native native FormData expects { uri, name, type }
-      const cleanUri = Platform.OS === 'android' ? fileUri : fileUri.replace('file://', '');
+    }
+
+    // 2. Web Browser: Use standard Web Blob/File
+    const formData = new FormData();
+    try {
+      const response = await fetch(fileUri);
+      const blob = await response.blob();
+      if (typeof File !== 'undefined') {
+        const file = new File([blob], fileName, { type: mimeType });
+        formData.append('file', file);
+      } else {
+        formData.append('file', blob, fileName);
+      }
+    } catch {
+      // Fallback
       formData.append('file', {
-        uri: cleanUri,
+        uri: fileUri,
         name: fileName,
         type: mimeType,
       } as any);

@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/services/theme-context';
 import { hapticImpactMedium, hapticLight } from '@/services/haptics';
+import { suppressSecurityLock, resumeSecurityLock } from '@/services/security-context';
 
 interface ReceiptPickerStepProps {
   selectedUri: string | null;
@@ -32,6 +33,7 @@ export function ReceiptPickerStep({
 
   const handlePickFromGallery = async () => {
     try {
+      suppressSecurityLock(120000);
       hapticLight();
       if (Platform.OS !== 'web') {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -55,11 +57,16 @@ export function ReceiptPickerStep({
       }
     } catch (err) {
       console.error('Error picking from gallery:', err);
+    } finally {
+      setTimeout(() => {
+        resumeSecurityLock();
+      }, 1500);
     }
   };
 
   const handleTakePhoto = async () => {
     try {
+      suppressSecurityLock(120000);
       hapticLight();
       if (Platform.OS !== 'web') {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -82,6 +89,10 @@ export function ReceiptPickerStep({
       }
     } catch (err) {
       console.error('Error taking photo:', err);
+    } finally {
+      setTimeout(() => {
+        resumeSecurityLock();
+      }, 1500);
     }
   };
 
