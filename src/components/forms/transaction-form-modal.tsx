@@ -32,6 +32,7 @@ interface TransactionFormModalProps {
   onSuccess: () => void;
   transactionToEdit?: TransactionResponse | null;
   defaultType?: TransactionType;
+  onOpenAIImport?: () => void;
 }
 
 export function TransactionFormModal({
@@ -40,6 +41,7 @@ export function TransactionFormModal({
   onSuccess,
   transactionToEdit,
   defaultType = 'expense',
+  onOpenAIImport,
 }: TransactionFormModalProps) {
   const { isDark } = useTheme();
   const [type, setType] = useState<TransactionType>(defaultType);
@@ -176,6 +178,36 @@ export function TransactionFormModal({
         subtitle="Record your income or expense"
       >
         <View style={styles.container}>
+          {!transactionToEdit && onOpenAIImport && (
+            <TouchableOpacity
+              onPress={() => {
+                hapticLight();
+                onClose();
+                onOpenAIImport();
+              }}
+              style={[
+                styles.aiBanner,
+                {
+                  backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF',
+                  borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : '#C7D2FE',
+                },
+              ]}
+            >
+              <View style={styles.aiBannerLeft}>
+                <Ionicons name="sparkles" size={18} color="#6366F1" />
+                <View>
+                  <Text style={[styles.aiBannerTitle, { color: isDark ? '#FFFFFF' : '#1E1B4B' }]}>
+                    Have a receipt or bill?
+                  </Text>
+                  <Text style={[styles.aiBannerSub, { color: isDark ? '#A5B4FC' : '#4F46E5' }]}>
+                    Scan and auto-fill details with AI ✨
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={isDark ? '#A5B4FC' : '#6366F1'} />
+            </TouchableOpacity>
+          )}
+
           <SegmentedControl
             options={[
               { label: 'Expense', value: 'expense' },
@@ -539,5 +571,28 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  aiBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  aiBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  aiBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  aiBannerSub: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '500',
   },
 });

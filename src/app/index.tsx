@@ -17,6 +17,7 @@ import { TransactionFormModal } from '@/components/forms/transaction-form-modal'
 import { AccountFormModal } from '@/components/forms/account-form-modal';
 import { CardFormModal } from '@/components/forms/card-form-modal';
 import { EMIFormModal } from '@/components/forms/emi-form-modal';
+import { AITransactionImportModal } from '@/components/import/ai-transaction-import-modal';
 import { dashboardService } from '@/services/dashboard';
 import { accountService } from '@/services/accounts';
 import { creditCardService } from '@/services/creditCards';
@@ -53,6 +54,7 @@ export default function DashboardScreen() {
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddCard, setShowAddCard] = useState(false);
   const [showAddEMI, setShowAddEMI] = useState(false);
+  const [showAIImport, setShowAIImport] = useState(false);
   const [selectedTxn, setSelectedTxn] = useState<TransactionResponse | null>(null);
 
   const loadDashboardData = useCallback(async () => {
@@ -137,15 +139,30 @@ export default function DashboardScreen() {
             </Text>
           </View>
 
-          <TouchableOpacity
-            onPress={() => {
-              hapticLight();
-              setShowAddTxn(true);
-            }}
-            style={styles.quickAddHeaderBtn}
-          >
-            <Ionicons name="add" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={() => {
+                hapticLight();
+                setShowAIImport(true);
+              }}
+              style={[
+                styles.quickAddHeaderBtn,
+                { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF' },
+              ]}
+            >
+              <Ionicons name="sparkles" size={18} color={isDark ? '#A5B4FC' : '#4F46E5'} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                hapticLight();
+                setShowAddTxn(true);
+              }}
+              style={styles.quickAddHeaderBtn}
+            >
+              <Ionicons name="add" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (
@@ -201,6 +218,22 @@ export default function DashboardScreen() {
 
             {/* Quick Action Pills */}
             <View style={styles.quickActionsRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  hapticLight();
+                  setShowAIImport(true);
+                }}
+                style={[
+                  styles.quickActionItem,
+                  { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' },
+                ]}
+              >
+                <Ionicons name="sparkles" size={20} color="#6366F1" />
+                <Text style={[styles.quickActionText, { color: isDark ? '#A5B4FC' : '#4F46E5' }]}>
+                  AI Scan
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 onPress={() => {
                   hapticLight();
@@ -525,6 +558,17 @@ export default function DashboardScreen() {
           setShowAddTxn(false);
           setSelectedTxn(null);
         }}
+        onSuccess={() => {
+          loadDashboardData();
+        }}
+        onOpenAIImport={() => {
+          setShowAIImport(true);
+        }}
+      />
+
+      <AITransactionImportModal
+        visible={showAIImport}
+        onClose={() => setShowAIImport(false)}
         onSuccess={() => {
           loadDashboardData();
         }}

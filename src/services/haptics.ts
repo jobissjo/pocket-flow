@@ -40,6 +40,15 @@ export async function hapticWarning(): Promise<void> {
   } catch (_) {}
 }
 
+export async function hapticError(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  } catch {}
+}
+
+export const hapticNotificationError = hapticError;
+
 export async function hapticSelection(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {

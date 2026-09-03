@@ -15,6 +15,7 @@ import { GlassCard } from '@/components/ui/glass-card';
 import { CustomInput } from '@/components/ui/custom-input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { TransactionFormModal } from '@/components/forms/transaction-form-modal';
+import { AITransactionImportModal } from '@/components/import/ai-transaction-import-modal';
 import { transactionService } from '@/services/transactions';
 import { categoryService } from '@/services/categories';
 import {
@@ -42,6 +43,7 @@ export default function HistoryScreen() {
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAIImport, setShowAIImport] = useState(false);
   const [selectedTxn, setSelectedTxn] = useState<TransactionResponse | null>(null);
 
   const loadTransactions = useCallback(async () => {
@@ -197,17 +199,37 @@ export default function HistoryScreen() {
         <Text style={[styles.screenTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
           Transactions
         </Text>
-        <TouchableOpacity
-          onPress={() => {
-            hapticLight();
-            setSelectedTxn(null);
-            setShowAddModal(true);
-          }}
-          style={styles.addBtn}
-        >
-          <Ionicons name="add" size={22} color="#FFFFFF" />
-          <Text style={styles.addBtnText}>Add</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => {
+              hapticLight();
+              setShowAIImport(true);
+            }}
+            style={[
+              styles.addBtn,
+              {
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.25)' : '#EEF2FF',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(99, 102, 241, 0.4)' : '#C7D2FE',
+              },
+            ]}
+          >
+            <Ionicons name="sparkles" size={16} color={isDark ? '#A5B4FC' : '#4F46E5'} />
+            <Text style={[styles.addBtnText, { color: isDark ? '#A5B4FC' : '#4F46E5' }]}>AI Scan</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              hapticLight();
+              setSelectedTxn(null);
+              setShowAddModal(true);
+            }}
+            style={styles.addBtn}
+          >
+            <Ionicons name="add" size={22} color="#FFFFFF" />
+            <Text style={styles.addBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search & Filter Bar */}
@@ -326,6 +348,17 @@ export default function HistoryScreen() {
           setShowAddModal(false);
           setSelectedTxn(null);
         }}
+        onSuccess={() => {
+          loadTransactions();
+        }}
+        onOpenAIImport={() => {
+          setShowAIImport(true);
+        }}
+      />
+
+      <AITransactionImportModal
+        visible={showAIImport}
+        onClose={() => setShowAIImport(false)}
         onSuccess={() => {
           loadTransactions();
         }}
